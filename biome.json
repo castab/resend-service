@@ -17,12 +17,6 @@
       "quoteStyle": "single"
     }
   },
-  "css": {
-    "parser": {
-      "cssModules": true,
-      "tailwindDirectives": true
-    }
-  },
   "linter": {
     "enabled": true,
     "rules": {
@@ -95,14 +89,7 @@
       "**",
       "!**/dist",
       "!**/pnpm-lock.yaml",
-      "!**/infra/logs-migrations/**/*",
-      "!**/infra/migrations/**/*",
       "!**/.next",
-      "!**/public",
-      "!**/transactional/.react-email/**/*",
-      "!**/transactional/node_modules/**/*",
-      "!**/playwright-report",
-      "!src/app/(internal)/design/_common/*.json",
       "!**/schemas/**/*"
     ]
   }

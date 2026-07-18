@@ -1,326 +1,35 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createClient as createClickHouseClient } from '@clickhouse/client';
-import { BigQuery } from '@google-cloud/bigquery';
 import { config } from 'dotenv';
-import { MongoClient } from 'mongodb';
-import mysql from 'mysql2/promise';
-import { Client as PgClient } from 'pg';
-import snowflake from 'snowflake-sdk';
+import { Client } from 'pg';
 
 config({ path: path.resolve(__dirname, '../.env.test') });
 
-const SCHEMAS_DIR = path.resolve(__dirname, '../schemas');
-
-async function setupPostgreSQL() {
+async function main() {
   console.info('Setting up PostgreSQL...');
-  const client = new PgClient({ connectionString: process.env.POSTGRESQL_URL });
+
+  const connectionString = process.env.POSTGRESQL_URL;
+  if (!connectionString) {
+    throw new Error('Missing POSTGRESQL_URL environment variable');
+  }
+
+  const client = new Client({ connectionString });
   await client.connect();
 
-  const schema = fs.readFileSync(
-    path.join(SCHEMAS_DIR, 'postgresql.sql'),
-    'utf-8',
-  );
-  await client.query(schema);
+  try {
+    const schema = fs.readFileSync(
+      path.resolve(__dirname, '../schemas/postgresql.sql'),
+      'utf-8',
+    );
+    await client.query(schema);
+  } finally {
+    await client.end();
+  }
 
-  await client.end();
   console.info('PostgreSQL setup complete');
 }
 
-async function setupSupabase() {
-  console.info('Setting up Supabase...');
-  if (!process.env.SUPABASE_DB_URL) {
-    throw new Error(
-      'SUPABASE_DB_URL not set. Get it from Supabase dashboard: Settings > Database > Connection string',
-    );
-  }
-  const client = new PgClient({
-    connectionString: process.env.SUPABASE_DB_URL,
-  });
-  await client.connect();
-
-  const schema = fs.readFileSync(
-    path.join(SCHEMAS_DIR, 'supabase.sql'),
-    'utf-8',
-  );
-  await client.query(schema);
-
-  await client.end();
-  console.info('Supabase setup complete');
-}
-
-async function setupMySQL() {
-  console.info('Setting up MySQL...');
-  const connection = await mysql.createConnection(process.env.MYSQL_URL!);
-
-  const schema = fs.readFileSync(path.join(SCHEMAS_DIR, 'mysql.sql'), 'utf-8');
-  const statements = schema.split(';').filter((s) => s.trim());
-
-  for (const statement of statements) {
-    if (statement.trim()) {
-      await connection.execute(statement);
-    }
-  }
-
-  await connection.end();
-  console.info('MySQL setup complete');
-}
-
-async function setupMongoDB() {
-  console.info('Setting up MongoDB...');
-  const client = new MongoClient(process.env.MONGODB_URI!);
-  await client.connect();
-
-  const db = client.db(process.env.MONGODB_DATABASE || 'resend_test');
-
-  const collections = [
-    'resend_wh_emails',
-    'resend_wh_contacts',
-    'resend_wh_domains',
-  ];
-
-  for (const name of collections) {
-    try {
-      await db.createCollection(name);
-    } catch (e: unknown) {
-      const err = e as { codeName?: string };
-      if (err.codeName !== 'NamespaceExists') {
-        throw e;
-      }
-    }
-  }
-
-  await db
-    .collection('resend_wh_emails')
-    .createIndex({ svix_id: 1 }, { unique: true });
-  await db
-    .collection('resend_wh_contacts')
-    .createIndex({ svix_id: 1 }, { unique: true });
-  await db
-    .collection('resend_wh_domains')
-    .createIndex({ svix_id: 1 }, { unique: true });
-
-  await client.close();
-  console.info('MongoDB setup complete');
-}
-
-async function setupClickHouse() {
-  console.info('Setting up ClickHouse...');
-  const dbName = process.env.CLICKHOUSE_DATABASE || 'resend_test';
-
-  // First connect without database to create it
-  const adminClient = createClickHouseClient({
-    url: process.env.CLICKHOUSE_URL,
-  });
-
-  await adminClient.command({
-    query: `CREATE DATABASE IF NOT EXISTS ${dbName}`,
-  });
-  await adminClient.close();
-
-  // Now connect to the database and create tables
-  const client = createClickHouseClient({
-    url: process.env.CLICKHOUSE_URL,
-    database: dbName,
-  });
-
-  const schema = fs.readFileSync(
-    path.join(SCHEMAS_DIR, 'clickhouse.sql'),
-    'utf-8',
-  );
-  const statements = schema
-    .split(';')
-    .map((s) =>
-      s
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('--'))
-        .join('\n')
-        .trim(),
-    )
-    .filter((s) => s.length > 0);
-
-  for (const statement of statements) {
-    if (statement.trim()) {
-      await client.command({ query: statement });
-    }
-  }
-
-  await client.close();
-  console.info('ClickHouse setup complete');
-}
-
-async function setupBigQuery() {
-  console.info('Setting up BigQuery...');
-  const projectId = process.env.BIGQUERY_PROJECT_ID;
-  const datasetId = process.env.BIGQUERY_DATASET_ID;
-  const credentials = process.env.BIGQUERY_CREDENTIALS;
-
-  if (!projectId || !datasetId) {
-    throw new Error(
-      'BIGQUERY_PROJECT_ID or BIGQUERY_DATASET_ID not set. Get these from Google Cloud Console.',
-    );
-  }
-
-  const options: { projectId: string; credentials?: object } = { projectId };
-  if (credentials) {
-    options.credentials = JSON.parse(credentials);
-  }
-
-  const bigquery = new BigQuery(options);
-
-  const schema = fs.readFileSync(
-    path.join(SCHEMAS_DIR, 'bigquery.sql'),
-    'utf-8',
-  );
-
-  const statements = schema
-    .split(';')
-    .map((s) =>
-      s
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('--'))
-        .join('\n')
-        .replace(/YOUR_DATASET/g, datasetId)
-        .trim(),
-    )
-    .filter((s) => s.length > 0);
-
-  for (const statement of statements) {
-    if (statement.trim()) {
-      await bigquery.query({ query: statement });
-    }
-  }
-
-  console.info('BigQuery setup complete');
-}
-
-async function main() {
-  console.info('Starting test database setup...\n');
-
-  const args = process.argv.slice(2);
-  const runAll = args.length === 0;
-
-  if (runAll || args.includes('--postgresql') || args.includes('--pg')) {
-    await setupPostgreSQL();
-  }
-
-  // Supabase requires real credentials - not run by default
-  if (args.includes('--supabase')) {
-    await setupSupabase();
-  }
-
-  if (runAll || args.includes('--mysql')) {
-    await setupMySQL();
-  }
-
-  if (runAll || args.includes('--mongodb') || args.includes('--mongo')) {
-    await setupMongoDB();
-  }
-
-  if (runAll || args.includes('--clickhouse') || args.includes('--ch')) {
-    await setupClickHouse();
-  }
-
-  // BigQuery requires real credentials - not run by default
-  if (args.includes('--bigquery') || args.includes('--bq')) {
-    await setupBigQuery();
-  }
-
-  // Snowflake requires real credentials - not run by default
-  if (args.includes('--snowflake') || args.includes('--sf')) {
-    await setupSnowflake();
-  }
-
-  console.info('\nAll requested databases set up successfully!');
-}
-
-async function setupSnowflake() {
-  console.info('Setting up Snowflake...');
-  const account = process.env.SNOWFLAKE_ACCOUNT;
-  const username = process.env.SNOWFLAKE_USERNAME;
-  const password = process.env.SNOWFLAKE_PASSWORD;
-  const database = process.env.SNOWFLAKE_DATABASE;
-  const schema = process.env.SNOWFLAKE_SCHEMA;
-  const warehouse = process.env.SNOWFLAKE_WAREHOUSE;
-
-  if (
-    !account ||
-    !username ||
-    !password ||
-    !database ||
-    !schema ||
-    !warehouse
-  ) {
-    throw new Error(
-      'Snowflake env vars not set. Set SNOWFLAKE_ACCOUNT, SNOWFLAKE_USERNAME, SNOWFLAKE_PASSWORD, SNOWFLAKE_DATABASE, SNOWFLAKE_SCHEMA, SNOWFLAKE_WAREHOUSE.',
-    );
-  }
-
-  const connection = snowflake.createConnection({
-    account,
-    username,
-    password,
-    database,
-    schema,
-    warehouse,
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    connection.connect((err) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve();
-      }
-    });
-  });
-
-  const schemaFile = fs.readFileSync(
-    path.join(SCHEMAS_DIR, 'snowflake.sql'),
-    'utf-8',
-  );
-
-  const statements = schemaFile
-    .split(';')
-    .map((s) =>
-      s
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('--'))
-        .join('\n')
-        .trim(),
-    )
-    .filter((s) => s.length > 0);
-
-  for (const statement of statements) {
-    if (statement.trim()) {
-      await new Promise<void>((resolve, reject) => {
-        connection.execute({
-          sqlText: statement,
-          complete: (err) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          },
-        });
-      });
-    }
-  }
-
-  await new Promise<void>((resolve) => {
-    connection.destroy((err) => {
-      if (err) {
-        console.error('Error closing connection:', err);
-      }
-      resolve();
-    });
-  });
-
-  console.info('Snowflake setup complete');
-}
-
-main().catch((err) => {
-  console.error('Setup failed:', err);
+main().catch((error) => {
+  console.error('Setup failed:', error);
   process.exit(1);
 });
