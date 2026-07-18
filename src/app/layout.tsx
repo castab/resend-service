@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Resend webhook service',
+  title: 'resend-service',
   description: 'Ingests Resend webhook events into PostgreSQL',
 };
 

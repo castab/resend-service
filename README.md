@@ -1,14 +1,14 @@
-# Resend Webhooks Ingester
+# resend-service
 
 A self-hosted webhook ingester for [Resend](https://resend.com) that stores email, contact, and domain events in your database. Built with Next.js for easy deployment to Vercel or your preferred hosting platform. [Learn more about storing webhooks data](https://resend.com/docs/dashboard/webhooks/how-to-store-webhooks-data)
 
 ## Deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/resend/resend-webhooks-ingester&env=RESEND_WEBHOOK_SECRET&envDescription=Your%20Resend%20webhook%20signing%20secret&envLink=https://resend.com/webhooks)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/castab/resend-service&env=RESEND_WEBHOOK_SECRET&envDescription=Your%20Resend%20webhook%20signing%20secret&envLink=https://resend.com/webhooks)
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/cd2lvJ?referralCode=w2CHHM&utm_medium=integration&utm_source=template&utm_campaign=generic)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/resend/resend-webhooks-ingester)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/castab/resend-service)
 
-Or use [Docker](#docker): `docker pull ghcr.io/resend/resend-webhooks-ingester`
+Or use [Docker](#docker): `docker pull ghcr.io/castab/resend-service`
 
 ## Table of Contents
 
@@ -85,14 +85,14 @@ Or use [Docker](#docker): `docker pull ghcr.io/resend/resend-webhooks-ingester`
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/resend/resend-webhooks-ingester.git
-cd resend-webhooks-ingester
+git clone https://github.com/castab/resend-service.git
+cd resend-service
 ```
 
 ### 2. Install dependencies
 
 ```bash
-pnpm install
+npm install
 ```
 
 ### 3. Set up environment variables
@@ -280,7 +280,7 @@ CLICKHOUSE_DATABASE=default
 Start the development server:
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
 The webhook endpoints will be available at `http://localhost:3000/{connector}`.
@@ -315,30 +315,30 @@ docker compose up -d
 **2. Apply schemas to test databases:**
 
 ```bash
-pnpm db:setup
+npm run db:setup
 ```
 
 **3. Start the dev server with test environment:**
 
 ```bash
-pnpm dev:test
+npm run dev:test
 ```
 
 **4. Run tests (in another terminal):**
 
 ```bash
-pnpm test
+npm test
 ```
 
 Or run tests for a specific connector:
 
 ```bash
-pnpm test:mongodb
-pnpm test:supabase
-pnpm test:postgresql
-pnpm test:neon
-pnpm test:mysql
-pnpm test:clickhouse
+npm run test:mongodb
+npm run test:supabase
+npm run test:postgresql
+npm run test:neon
+npm run test:mysql
+npm run test:clickhouse
 ```
 
 ### Test Environment
@@ -358,12 +358,12 @@ SUPABASE_DB_URL=postgresql://postgres:password@db.your-project.supabase.co:5432/
 
 2. Run the schema setup (from Supabase SQL Editor or via CLI):
 ```bash
-pnpm db:setup --supabase
+npm run db:setup -- --supabase
 ```
 
 3. Run the tests:
 ```bash
-pnpm test:supabase
+npm run test:supabase
 ```
 
 ## Deployment
@@ -373,7 +373,7 @@ pnpm test:supabase
 Pull the image from GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/resend/resend-webhooks-ingester:latest
+docker pull ghcr.io/castab/resend-service:latest
 ```
 
 Run with environment variables:
@@ -383,14 +383,14 @@ docker run -p 3000:3000 \
   -e RESEND_WEBHOOK_SECRET=whsec_your_secret \
   -e MONGODB_URI=mongodb://host:27017 \
   -e MONGODB_DATABASE=resend_webhooks \
-  ghcr.io/resend/resend-webhooks-ingester:latest
+  ghcr.io/castab/resend-service:latest
 ```
 
 Or build locally:
 
 ```bash
-docker build -t resend-webhooks-ingester .
-docker run -p 3000:3000 -e ... resend-webhooks-ingester
+docker build -t resend-service .
+docker run -p 3000:3000 -e ... resend-service
 ```
 
 ### Vercel
@@ -415,7 +415,7 @@ This is a standard Next.js application:
 - **Render**: Use the deploy button above or connect your repo
 - **Fly.io**: Use the Dockerfile
 - **Google Cloud Run**: Build and deploy container
-- **Self-hosted**: Use Docker or `pnpm build && pnpm start`
+- **Self-hosted**: Use Docker or `npm run build && npm start`
 
 ## Configuring Resend Webhooks
 
