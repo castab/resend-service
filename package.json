@@ -10,18 +10,25 @@
   "scripts": {
     "dev": "next dev",
     "dev:test": "dotenv -e .env.test -- next dev",
-    "build": "next build",
+    "build": "npm run db:generate && next build",
     "start": "next start",
     "lint:fix": "biome check . --write",
     "lint": "biome check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:postgresql": "vitest run tests/integration/postgresql.test.ts",
-    "db:setup": "tsx scripts/setup-test-dbs.ts"
+    "db:generate": "prisma generate",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:setup": "npm run db:generate && npm run db:migrate:deploy",
+    "db:validate": "prisma validate"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "dotenv": "17.2.3",
     "next": "16.1.1",
     "pg": "8.13.1",
+    "prisma": "7.8.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "svix": "1.67.0"
@@ -32,9 +39,7 @@
     "@types/pg": "8.11.11",
     "@types/react": "19",
     "@types/react-dom": "19",
-    "dotenv": "17.2.3",
     "dotenv-cli": "11.0.0",
-    "tsx": "4.21.0",
     "typescript": "5",
     "vitest": "4.0.17"
   }

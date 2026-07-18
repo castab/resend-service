@@ -10,7 +10,7 @@ export const TEST_CONFIG = {
     'whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=',
   postgresql: {
     url:
-      process.env.POSTGRESQL_URL ||
+      process.env.DATABASE_URL ||
       'postgres://postgres:postgres@localhost:5432/resend_test',
   },
 };

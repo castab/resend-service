@@ -1,4 +1,5 @@
-import { Client } from 'pg';
+import { Prisma, type PrismaClient } from '@/generated/prisma/client';
+import { getPrismaClient } from '@/lib/prisma';
 import {
   createWebhookHandler,
   prepareContactEventData,
@@ -11,125 +12,109 @@ import type {
   EmailWebhookEvent,
 } from '@/types/webhook';
 
-async function getClient() {
-  const connectionString = process.env.POSTGRESQL_URL;
-
-  if (!connectionString) {
-    throw new Error('Missing POSTGRESQL_URL environment variable');
-  }
-
-  const client = new Client({ connectionString });
-  await client.connect();
-  return client;
-}
-
 async function insertEmailEvent(
-  client: Client,
+  client: PrismaClient,
   event: EmailWebhookEvent,
   svixId: string,
 ) {
   const data = prepareEmailEventData(event);
 
-  const sql = `
-    INSERT INTO resend_wh_emails (
-      svix_id, event_type, event_created_at, email_id, from_address, to_addresses,
-      subject, email_created_at, broadcast_id, template_id, tags,
-      bounce_type, bounce_sub_type, bounce_message, bounce_diagnostic_code,
-      click_ip_address, click_link, click_timestamp, click_user_agent
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-    ON CONFLICT (svix_id) DO NOTHING
-  `;
-
-  await client.query(sql, [
-    svixId,
-    data.event_type,
-    data.event_created_at,
-    data.email_id,
-    data.from_address,
-    data.to_addresses,
-    data.subject,
-    data.email_created_at,
-    data.broadcast_id,
-    data.template_id,
-    data.tags ? JSON.stringify(data.tags) : null,
-    data.bounce_type,
-    data.bounce_sub_type,
-    data.bounce_message,
-    data.bounce_diagnostic_code,
-    data.click_ip_address,
-    data.click_link,
-    data.click_timestamp,
-    data.click_user_agent,
-  ]);
+  await client.emailWebhookEvent.createMany({
+    data: [
+      {
+        svixId,
+        eventType: data.event_type,
+        eventCreatedAt: data.event_created_at,
+        emailId: data.email_id,
+        fromAddress: data.from_address,
+        toAddresses: data.to_addresses,
+        subject: data.subject,
+        emailCreatedAt: data.email_created_at,
+        broadcastId: data.broadcast_id,
+        templateId: data.template_id,
+        tags:
+          data.tags?.map(({ name, value }) => ({ name, value })) ??
+          Prisma.DbNull,
+        bounceType: data.bounce_type,
+        bounceSubType: data.bounce_sub_type,
+        bounceMessage: data.bounce_message,
+        bounceDiagnosticCode: data.bounce_diagnostic_code ?? [],
+        clickIpAddress: data.click_ip_address,
+        clickLink: data.click_link,
+        clickTimestamp: data.click_timestamp,
+        clickUserAgent: data.click_user_agent,
+      },
+    ],
+    skipDuplicates: true,
+  });
 }
 
 async function insertContactEvent(
-  client: Client,
+  client: PrismaClient,
   event: ContactWebhookEvent,
   svixId: string,
 ) {
   const data = prepareContactEventData(event);
 
-  const sql = `
-    INSERT INTO resend_wh_contacts (
-      svix_id, event_type, event_created_at, contact_id, audience_id, segment_ids,
-      email, first_name, last_name, unsubscribed, contact_created_at, contact_updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    ON CONFLICT (svix_id) DO NOTHING
-  `;
-
-  await client.query(sql, [
-    svixId,
-    data.event_type,
-    data.event_created_at,
-    data.contact_id,
-    data.audience_id,
-    data.segment_ids,
-    data.email,
-    data.first_name,
-    data.last_name,
-    data.unsubscribed,
-    data.contact_created_at,
-    data.contact_updated_at,
-  ]);
+  await client.contactWebhookEvent.createMany({
+    data: [
+      {
+        svixId,
+        eventType: data.event_type,
+        eventCreatedAt: data.event_created_at,
+        contactId: data.contact_id,
+        audienceId: data.audience_id,
+        segmentIds: data.segment_ids,
+        email: data.email,
+        firstName: data.first_name,
+        lastName: data.last_name,
+        unsubscribed: data.unsubscribed,
+        contactCreatedAt: data.contact_created_at,
+        contactUpdatedAt: data.contact_updated_at,
+      },
+    ],
+    skipDuplicates: true,
+  });
 }
 
 async function insertDomainEvent(
-  client: Client,
+  client: PrismaClient,
   event: DomainWebhookEvent,
   svixId: string,
 ) {
   const data = prepareDomainEventData(event);
 
-  const sql = `
-    INSERT INTO resend_wh_domains (
-      svix_id, event_type, event_created_at, domain_id, name, status,
-      region, domain_created_at, records
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    ON CONFLICT (svix_id) DO NOTHING
-  `;
-
-  await client.query(sql, [
-    svixId,
-    data.event_type,
-    data.event_created_at,
-    data.domain_id,
-    data.name,
-    data.status,
-    data.region,
-    data.domain_created_at,
-    data.records ? JSON.stringify(data.records) : null,
-  ]);
-}
-
-async function cleanup(client: Client) {
-  await client.end();
+  await client.domainWebhookEvent.createMany({
+    data: [
+      {
+        svixId,
+        eventType: data.event_type,
+        eventCreatedAt: data.event_created_at,
+        domainId: data.domain_id,
+        name: data.name,
+        status: data.status,
+        region: data.region,
+        domainCreatedAt: data.domain_created_at,
+        records: data.records.map(
+          ({ record, name, type, value, ttl, status, priority }) => ({
+            record,
+            name,
+            type,
+            value,
+            ttl,
+            status,
+            ...(priority === undefined ? {} : { priority }),
+          }),
+        ),
+      },
+    ],
+    skipDuplicates: true,
+  });
 }
 
 export const POST = createWebhookHandler({
-  getClient,
+  getClient: getPrismaClient,
   insertEmailEvent,
   insertContactEvent,
   insertDomainEvent,
-  cleanup,
 });

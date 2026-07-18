@@ -43,13 +43,19 @@ jobs:
       - name: Setup test databases
         run: npm run db:setup
         env:
-          POSTGRESQL_URL: postgres://postgres:postgres@localhost:5432/resend_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
+
+      - name: Validate
+        run: |
+          npm run db:validate
+          npm run lint
+          npm run build
 
       - name: Start dev server
         run: npm run dev &
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
-          POSTGRESQL_URL: postgres://postgres:postgres@localhost:5432/resend_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
 
       - name: Wait for server
         run: |
@@ -63,4 +69,4 @@ jobs:
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
           APP_BASE_URL: http://localhost:3000
-          POSTGRESQL_URL: postgres://postgres:postgres@localhost:5432/resend_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
