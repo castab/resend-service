@@ -19,6 +19,7 @@ with additional application capabilities over time.
 - Stores email, contact, and domain events in PostgreSQL
 - Ignores duplicate deliveries using the unique `svix-id` header
 - Manages the database schema with Prisma migrations
+- Publishes an OpenAPI specification and Swagger UI for the live API
 - Builds as a standalone Next.js application and Docker image
 
 The service stores normalized fields used by its current schema. It does not
@@ -158,9 +159,37 @@ The webhook endpoint is available at:
 http://localhost:3000/api/webhooks/v1/resend
 ```
 
+The interactive API documentation and its OpenAPI source are available at:
+
+```text
+http://localhost:3000/docs
+http://localhost:3000/openapi.json
+```
+
 Resend needs a publicly accessible HTTPS endpoint. To receive real webhook
 events during local development, expose the local server with a trusted tunnel
 and register this path on the tunnel's public URL.
+
+## API Documentation
+
+The machine-readable API contract is maintained in
+[`public/openapi.json`](public/openapi.json) using OpenAPI 3.1. Swagger UI serves
+that contract publicly at `/docs`, while `/openapi.json` exposes the source
+document directly.
+
+Validate the contract after changing an endpoint or its documented behavior:
+
+```bash
+npm run api:validate
+```
+
+Swagger UI includes interactive request controls, but it cannot generate valid
+Svix signatures. A request sent from the UI must provide `svix-id`,
+`svix-timestamp`, and `svix-signature` values generated for the exact raw JSON
+body. Resend remains the normal caller of the webhook endpoint.
+
+The root path intentionally has no page and returns `404`. `/docs` is the
+canonical application documentation URL.
 
 ## Webhook API
 
@@ -266,6 +295,7 @@ from the checked-in Dockerfile or configure the target platform to do so.
 
 | Command | Purpose |
 | --- | --- |
+| `npm run api:validate` | Validate and lint the OpenAPI specification |
 | `npm run dev` | Start the Next.js development server |
 | `npm run dev:test` | Start Next.js with variables from `.env.test` |
 | `npm run build` | Generate Prisma Client and create a production build |
@@ -335,6 +365,7 @@ excluded from version control.
 |   `-- schema.prisma               # Prisma data model
 |-- src/
 |   |-- app/api/webhooks/v1/resend/ # Resend webhook route
+|   |-- app/docs/                   # Public Swagger UI
 |   |-- lib/                        # Prisma and webhook handling
 |   `-- types/                      # Resend webhook types
 |-- tests/
@@ -342,6 +373,7 @@ excluded from version control.
 |   `-- integration/                # PostgreSQL integration tests
 |-- Dockerfile                      # Portable production image
 |-- docker-compose.yml              # Local PostgreSQL service
+|-- public/openapi.json             # OpenAPI API contract
 |-- prisma.config.ts                # Prisma CLI configuration
 `-- railway.json                    # Recommended Railway deployment settings
 ```
@@ -354,7 +386,8 @@ excluded from version control.
   data.
 - Monitor `500` responses and database errors; repeated failures prevent event
   persistence and trigger webhook retries.
-- The root route is empty and is not a dedicated readiness or liveness check.
+- The root path intentionally returns `404` and is not a readiness or liveness
+  check. API documentation is served at `/docs`.
 - The service has no read API, administrative API, retention job, or event
   replay worker.
 
@@ -393,5 +426,7 @@ reset a production database to resolve this error.
 - [Resend event types](https://resend.com/docs/webhooks/event-types)
 - [Verify webhook requests](https://resend.com/docs/webhooks/verify-webhooks-requests)
 - [Webhook retries and replays](https://resend.com/docs/webhooks/retries-and-replays)
+- [OpenAPI Specification](https://spec.openapis.org/oas/latest.html)
+- [Swagger UI](https://swagger.io/tools/swagger-ui/)
 - [Railway Dockerfiles](https://docs.railway.com/guides/dockerfiles)
 - [Prisma migrations](https://www.prisma.io/docs/orm/prisma-migrate)
