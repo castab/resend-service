@@ -40,6 +40,21 @@ export class PostgreSQLTestClient {
     return Number.parseInt(rows[0].count, 10);
   }
 
+  async getUuidVersionBySvixId(
+    table: TableName,
+    svixId: string,
+  ): Promise<number | null> {
+    if (!this.client) {
+      throw new Error('Not connected');
+    }
+
+    const { rows } = await this.client.query(
+      `SELECT uuid_extract_version(id) AS uuid_version FROM ${table} WHERE svix_id = $1`,
+      [svixId],
+    );
+    return rows[0]?.uuid_version ?? null;
+  }
+
   async truncate(table: TableName) {
     if (!this.client) {
       throw new Error('Not connected');

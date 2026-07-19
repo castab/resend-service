@@ -1,6 +1,6 @@
 -- CreateTable
 CREATE TABLE "resend_wh_emails" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "id" UUID NOT NULL DEFAULT uuidv7(),
     "svix_id" TEXT NOT NULL,
     "event_type" TEXT NOT NULL,
     "webhook_received_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -27,7 +27,7 @@ CREATE TABLE "resend_wh_emails" (
 
 -- CreateTable
 CREATE TABLE "resend_wh_contacts" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "id" UUID NOT NULL DEFAULT uuidv7(),
     "svix_id" TEXT NOT NULL,
     "event_type" TEXT NOT NULL,
     "webhook_received_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -47,7 +47,7 @@ CREATE TABLE "resend_wh_contacts" (
 
 -- CreateTable
 CREATE TABLE "resend_wh_domains" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "id" UUID NOT NULL DEFAULT uuidv7(),
     "svix_id" TEXT NOT NULL,
     "event_type" TEXT NOT NULL,
     "webhook_received_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
