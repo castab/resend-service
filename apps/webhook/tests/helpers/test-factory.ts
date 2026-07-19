@@ -422,6 +422,34 @@ export function createWebhookTests(createClient: () => TestDbClient) {
           parent_internet_message_id: parentMessageId,
         });
       });
+
+      it('records the ledger event even when inbound retrieval fails', async () => {
+        const event = fixtures.email.received({
+          data: {
+            email_id: 'em_unretrievable',
+            message_id: '<unretrievable@example.com>',
+            from: 'external@example.com',
+            to: ['inbox@example.com'],
+            subject: 'Unretrievable Email',
+            created_at: '2026-07-19T04:03:00.000Z',
+          },
+        });
+        const svixId = generateSvixId();
+        const signed = signPayload(TEST_CONFIG.webhookSecret, event, svixId);
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: signed.headers,
+          body: signed.body,
+        });
+
+        expect(response.status).toBe(500);
+        expect(
+          await dbClient.findBySvixId('resend_wh_emails', svixId),
+        ).not.toBeNull();
+        expect(
+          await dbClient.findEmailMessageByResendId(event.data.email_id),
+        ).toBeNull();
+      });
     });
 
     describe('contact events', () => {

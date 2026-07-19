@@ -10,6 +10,7 @@ import {
   authorize,
   isRecord,
   isUuid,
+  MAX_BODY_LENGTH,
   readJson,
   sendResultResponse,
   serializeMessage,
@@ -228,6 +229,12 @@ function validateMessageBody(
   const html = typeof value.html === 'string' ? value.html : undefined;
   if (!text && !html) {
     return { error: 'text or html is required' };
+  }
+  if (
+    (text?.length ?? 0) > MAX_BODY_LENGTH ||
+    (html?.length ?? 0) > MAX_BODY_LENGTH
+  ) {
+    return { error: 'text and html are limited to 1 MiB each' };
   }
   if (
     value.replyToMessageId !== undefined &&

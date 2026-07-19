@@ -93,3 +93,33 @@ jobs:
         run: |
           docker build -f Dockerfile.webhook -t resend-webhook:test .
           docker build -f Dockerfile.conversation-api -t resend-conversation-api:test .
+
+      - name: Smoke test production images
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
+            resend-webhook:test npm run db:migrate:deploy
+          docker run -d --name webhook-smoke --network host \
+            -e PORT=3100 \
+            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
+            -e RESEND_API_KEY=test-resend-api-key \
+            -e RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ= \
+            resend-webhook:test
+          docker run -d --name conversation-smoke --network host \
+            -e PORT=3101 \
+            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
+            -e RESEND_API_KEY=test-resend-api-key \
+            -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
+            -e CONVERSATION_API_KEY=test-conversation-api-key \
+            resend-conversation-api:test
+          for i in {1..30}; do
+            curl --fail --silent http://localhost:3100/api/health/v1 && break
+            sleep 1
+          done
+          curl --fail --silent http://localhost:3100/api/health/v1 > /dev/null || (docker logs webhook-smoke && exit 1)
+          for i in {1..30}; do
+            curl --fail --silent http://localhost:3101/api/health/v1 && break
+            sleep 1
+          done
+          curl --fail --silent http://localhost:3101/api/health/v1 > /dev/null || (docker logs conversation-smoke && exit 1)
+          docker rm -f webhook-smoke conversation-smoke

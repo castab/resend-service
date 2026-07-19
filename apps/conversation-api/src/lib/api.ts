@@ -17,15 +17,16 @@ export function authorize(request: Request): NextResponse | null {
     );
   }
 
-  const authorization = request.headers.get('authorization');
-  const provided = authorization?.startsWith('Bearer ')
-    ? authorization.slice(7)
-    : '';
+  const authorization = request.headers.get('authorization') ?? '';
+  const provided = authorization.match(/^Bearer[ ]+(\S+)$/i)?.[1] ?? '';
   const expectedHash = createHash('sha256').update(expected).digest();
   const providedHash = createHash('sha256').update(provided).digest();
 
   if (!provided || !timingSafeEqual(expectedHash, providedHash)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } },
+    );
   }
 
   return null;
@@ -48,6 +49,32 @@ export async function readJson(
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export const MAX_TITLE_LENGTH = 255;
+export const MAX_SUBJECT_LENGTH = 255;
+export const MAX_NAME_LENGTH = 256;
+export const MAX_BODY_LENGTH = 1_048_576;
+
+function containsControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isHeaderSafeText(
+  value: unknown,
+  maxLength: number,
+): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= maxLength &&
+    !containsControlCharacter(value)
+  );
 }
 
 export function isEmailAddress(value: unknown): value is string {

@@ -27,30 +27,11 @@ async function insertEmailEvent(
   const existingEvent = await client.emailWebhookEvent.findUnique({
     where: { svixId },
   });
-  if (existingEvent) {
-    if (event.type !== 'email.received') {
-      return;
-    }
-    const existingMessage = await client.emailMessage.findUnique({
-      where: { resendEmailId: event.data.email_id },
-    });
-    if (existingMessage) {
-      return;
-    }
+  if (existingEvent && event.type !== 'email.received') {
+    return;
   }
 
   const data = prepareEmailEventData(event);
-  const existingReceivedMessage =
-    event.type === 'email.received'
-      ? await client.emailMessage.findUnique({
-          where: { resendEmailId: event.data.email_id },
-        })
-      : null;
-  const receivedEmail =
-    event.type === 'email.received' && !existingReceivedMessage
-      ? await getConfiguredResendClient().getReceived(event.data.email_id)
-      : null;
-
   await client.emailWebhookEvent.createMany({
     data: [
       {
@@ -80,8 +61,16 @@ async function insertEmailEvent(
     skipDuplicates: true,
   });
 
-  if (receivedEmail) {
-    await projectInboundEmail(client, event.data, receivedEmail);
+  if (event.type === 'email.received') {
+    const existingReceivedMessage = await client.emailMessage.findUnique({
+      where: { resendEmailId: event.data.email_id },
+    });
+    if (!existingReceivedMessage) {
+      const receivedEmail = await getConfiguredResendClient().getReceived(
+        event.data.email_id,
+      );
+      await projectInboundEmail(client, event.data, receivedEmail);
+    }
   }
 }
 

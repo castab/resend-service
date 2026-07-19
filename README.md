@@ -269,6 +269,9 @@ Conversation service:
 - Do not generate or attach a public domain
 - Configure `DATABASE_URL`, `RESEND_API_KEY`, `RESEND_FROM`, and
   `CONVERSATION_API_KEY`
+- Define `PORT` explicitly as a service variable on the conversation service.
+  Railway reference variables resolve against service variables, not image
+  defaults, so `${{conversation-api.PORT}}` is empty without it.
 - In each caller, define `CONVERSATION_API_URL` with Railway references:
   `http://${{conversation-api.RAILWAY_PRIVATE_DOMAIN}}:${{conversation-api.PORT}}`
 

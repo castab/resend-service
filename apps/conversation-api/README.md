@@ -14,6 +14,10 @@ hostname and port are used:
 CONVERSATION_API_URL=http://${{conversation-api.RAILWAY_PRIVATE_DOMAIN}}:${{conversation-api.PORT}}
 ```
 
+Define `PORT` explicitly as a service variable on this service. Railway
+reference variables resolve against service variables, not image defaults, so
+`${{conversation-api.PORT}}` is empty without it.
+
 All operations require:
 
 ```text
@@ -68,6 +72,15 @@ within 23 hours makes one bounded call with the same provider idempotency key;
 older pending intents become indeterminate rather than risking a duplicate.
 If sent-message metadata is temporarily unavailable, a later reply attempts one
 bounded retrieval before sending.
+
+A topic conversation whose messages have all `failed` is not stuck: creating it
+again with a new idempotency key updates the participant, title, and subject,
+then sends a fresh opening message. Retrying the original key still reports the
+failed result, and any non-failed message keeps the topic conflict a `409`.
+
+Titles, subjects, and participant names are limited to header-safe text (no
+ASCII control characters) of at most 255, 255, and 256 characters. Message
+`text` and `html` are limited to 1 MiB each.
 
 ## Configuration
 

@@ -98,6 +98,51 @@ describe('Private conversation API', () => {
     expect(second.body.message.id).toBe(first.body.message.id);
   });
 
+  it('re-opens a topic conversation after its opening send failed', async () => {
+    resendServer.failNextSendStatus = 422;
+    const failed = await createConversation('reopen-original');
+    expect(failed.response.status).toBe(502);
+    expect(failed.body.message.state).toBe('failed');
+
+    const reopenedResponse = await fetch(baseUrl, {
+      method: 'POST',
+      headers: headers('reopen-retry'),
+      body: JSON.stringify({
+        topic: { type: 'booking', externalId: '4821', title: 'Booking 4821' },
+        participant: { email: 'corrected@example.com', name: 'Person' },
+        message: { text: 'Opening message' },
+      }),
+    });
+    const reopened = await reopenedResponse.json();
+    expect(reopenedResponse.status).toBe(201);
+    expect(reopened.conversationId).toBe(failed.body.conversationId);
+    expect(reopened.message.state).toBe('accepted');
+    expect(resendServer.sends).toHaveLength(1);
+    expect(resendServer.sends[0].input.to).toEqual(['corrected@example.com']);
+
+    const conflict = await createConversation('reopen-conflict');
+    expect(conflict.response.status).toBe(409);
+  });
+
+  it('rejects header-unsafe and oversized topic titles', async () => {
+    const crlfResponse = await fetch(baseUrl, {
+      method: 'POST',
+      headers: headers('crlf-title'),
+      body: JSON.stringify(
+        createBody('Booking 4821\r\nBcc: victim@example.com'),
+      ),
+    });
+    expect(crlfResponse.status).toBe(400);
+
+    const oversizedResponse = await fetch(baseUrl, {
+      method: 'POST',
+      headers: headers('oversized-title'),
+      body: JSON.stringify(createBody('x'.repeat(256))),
+    });
+    expect(oversizedResponse.status).toBe(400);
+    expect(resendServer.sends).toHaveLength(0);
+  });
+
   it('rejects reuse of an idempotency key with another payload', async () => {
     await createConversation('conflicting-request');
     const response = await fetch(baseUrl, {

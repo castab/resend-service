@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@resend-service/database';
+import type { EmailMessage, PrismaClient } from '@resend-service/database';
 import {
   getConfiguredResendClient,
   ResendApiError,
@@ -44,7 +44,7 @@ export async function deliverPendingMessage(
           },
           `conversation/${message.id}`,
         );
-        const accepted = await transaction.emailMessage.update({
+        return await transaction.emailMessage.update({
           where: { id: message.id },
           data: {
             state: 'ACCEPTED',
@@ -52,23 +52,6 @@ export async function deliverPendingMessage(
             resendEmailId: sent.id,
           },
         });
-
-        try {
-          const retrieved = await resend.getSent(sent.id);
-          return await transaction.emailMessage.update({
-            where: { id: message.id },
-            data: {
-              internetMessageId: retrieved.message_id,
-              emailCreatedAt: new Date(retrieved.created_at),
-            },
-          });
-        } catch (error) {
-          console.warn(
-            'Sent email metadata is not available yet:',
-            error instanceof Error ? error.message : 'Unknown error',
-          );
-          return accepted;
-        }
       } catch (error) {
         sendError = error;
         const knownFailure =
@@ -87,13 +70,45 @@ export async function deliverPendingMessage(
         });
       }
     },
-    { maxWait: 5_000, timeout: 35_000 },
+    { maxWait: 5_000, timeout: 25_000 },
   );
 
   if (sendError) {
     throw sendError;
   }
-  return result;
+  return hydrateSentMetadata(client, result);
+}
+
+async function hydrateSentMetadata(
+  client: PrismaClient,
+  message: EmailMessage,
+): Promise<EmailMessage> {
+  if (
+    message.state !== 'ACCEPTED' ||
+    !message.resendEmailId ||
+    message.internetMessageId
+  ) {
+    return message;
+  }
+
+  try {
+    const retrieved = await getConfiguredResendClient().getSent(
+      message.resendEmailId,
+    );
+    return await client.emailMessage.update({
+      where: { id: message.id },
+      data: {
+        internetMessageId: retrieved.message_id,
+        emailCreatedAt: new Date(retrieved.created_at),
+      },
+    });
+  } catch (error) {
+    console.warn(
+      'Sent email metadata is not available yet:',
+      error instanceof Error ? error.message : 'Unknown error',
+    );
+    return message;
+  }
 }
 
 export async function recoverPendingMessage(

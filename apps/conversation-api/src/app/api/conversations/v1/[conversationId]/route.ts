@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server';
 import {
   authorize,
   getConversationResponse,
+  isHeaderSafeText,
   isRecord,
   isUuid,
+  MAX_TITLE_LENGTH,
   readJson,
 } from '@/lib/api';
 
@@ -108,7 +110,7 @@ function validateTopic(
     typeof topic.externalId !== 'string' ||
     !topic.externalId ||
     topic.externalId.length > 255 ||
-    typeof topic.title !== 'string' ||
+    !isHeaderSafeText(topic.title, MAX_TITLE_LENGTH) ||
     !topic.title.trim()
   ) {
     return { error: 'topic type, externalId, and title are invalid' };

@@ -1,4 +1,8 @@
-import { getPrismaClient, Prisma } from '@resend-service/database';
+import {
+  getPrismaClient,
+  Prisma,
+  type PrismaClient,
+} from '@resend-service/database';
 import {
   hashSendRequest,
   normalizeSubject,
@@ -9,8 +13,13 @@ import {
   authorize,
   getPageLimit,
   isEmailAddress,
+  isHeaderSafeText,
   isRecord,
   isUuid,
+  MAX_BODY_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_SUBJECT_LENGTH,
+  MAX_TITLE_LENGTH,
   readJson,
   sendResultResponse,
   serializeMessage,
@@ -123,6 +132,45 @@ export async function POST(request: Request) {
         const recovered = await recoverPendingMessage(client, raced.id);
         return sendResultResponse(recovered, raced.conversationId);
       }
+
+      let reopened: { conversationId: string; messageId: string } | null;
+      try {
+        reopened = await reopenFailedTopicConversation(client, {
+          value: validation.value,
+          from,
+          subject,
+          idempotencyKey,
+          requestHash,
+        });
+      } catch (reopenError) {
+        if (
+          reopenError instanceof Prisma.PrismaClientKnownRequestError &&
+          reopenError.code === 'P2002'
+        ) {
+          const racedReopen = await client.emailMessage.findUnique({
+            where: { idempotencyKey },
+          });
+          if (racedReopen && racedReopen.requestHash === requestHash) {
+            const recovered = await recoverPendingMessage(
+              client,
+              racedReopen.id,
+            );
+            return sendResultResponse(recovered, racedReopen.conversationId);
+          }
+          return NextResponse.json(
+            { error: 'Idempotency key is already in use' },
+            { status: 409 },
+          );
+        }
+        throw reopenError;
+      }
+      if (reopened) {
+        return deliverOpeningMessage(
+          client,
+          reopened.conversationId,
+          reopened.messageId,
+        );
+      }
       return NextResponse.json(
         { error: 'A conversation already exists for this topic' },
         { status: 409 },
@@ -131,11 +179,19 @@ export async function POST(request: Request) {
     throw error;
   }
 
+  return deliverOpeningMessage(client, created.id, created.messages[0].id);
+}
+
+async function deliverOpeningMessage(
+  client: PrismaClient,
+  conversationId: string,
+  messageId: string,
+) {
   try {
-    const message = await deliverPendingMessage(client, created.messages[0].id);
+    const message = await deliverPendingMessage(client, messageId);
     return NextResponse.json(
       {
-        conversationId: created.id,
+        conversationId,
         message: serializeMessage(message),
       },
       { status: 201 },
@@ -146,17 +202,85 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : 'Unknown error',
     );
     const message = await client.emailMessage.findUniqueOrThrow({
-      where: { id: created.messages[0].id },
+      where: { id: messageId },
     });
     return NextResponse.json(
       {
         error: 'Failed to send email',
-        conversationId: created.id,
+        conversationId,
         message: serializeMessage(message),
       },
       { status: 502 },
     );
   }
+}
+
+async function reopenFailedTopicConversation(
+  client: PrismaClient,
+  input: {
+    value: {
+      topic: { type: string; externalId: string; title: string };
+      participant: { email: string; name: string | null };
+      message: { text?: string; html?: string };
+    };
+    from: { address: string; name: string | null };
+    subject: string;
+    idempotencyKey: string;
+    requestHash: string;
+  },
+): Promise<{ conversationId: string; messageId: string } | null> {
+  const conversation = await client.emailConversation.findUnique({
+    where: {
+      topicType_externalTopicId: {
+        topicType: input.value.topic.type,
+        externalTopicId: input.value.topic.externalId,
+      },
+    },
+  });
+  if (!conversation) {
+    return null;
+  }
+
+  const now = new Date();
+  return client.$transaction(async (transaction) => {
+    await transaction.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${conversation.id}))::text
+    `;
+    const liveMessage = await transaction.emailMessage.findFirst({
+      where: { conversationId: conversation.id, state: { not: 'FAILED' } },
+    });
+    if (liveMessage) {
+      return null;
+    }
+
+    await transaction.emailConversation.update({
+      where: { id: conversation.id },
+      data: {
+        title: input.value.topic.title,
+        subject: input.subject,
+        participantAddress: input.value.participant.email,
+        participantName: input.value.participant.name,
+        lastMessageAt: now,
+      },
+    });
+    const message = await transaction.emailMessage.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'OUTBOUND',
+        state: 'PENDING',
+        fromAddress: input.from.address,
+        fromName: input.from.name,
+        toAddress: input.value.participant.email,
+        subject: input.subject,
+        textBody: input.value.message.text ?? null,
+        htmlBody: input.value.message.html ?? null,
+        emailCreatedAt: now,
+        idempotencyKey: input.idempotencyKey,
+        requestHash: input.requestHash,
+      },
+    });
+    return { conversationId: conversation.id, messageId: message.id };
+  });
 }
 
 export async function GET(request: Request) {
@@ -278,7 +402,7 @@ function validateCreateBody(value: unknown):
     typeof topic.externalId !== 'string' ||
     !topic.externalId ||
     topic.externalId.length > 255 ||
-    typeof topic.title !== 'string' ||
+    !isHeaderSafeText(topic.title, MAX_TITLE_LENGTH) ||
     !topic.title.trim()
   ) {
     return { error: 'topic type, externalId, and title are invalid' };
@@ -286,13 +410,31 @@ function validateCreateBody(value: unknown):
   if (!isEmailAddress(participant.email)) {
     return { error: 'participant.email must be a valid email address' };
   }
+  if (
+    participant.name !== undefined &&
+    participant.name !== null &&
+    !isHeaderSafeText(participant.name, MAX_NAME_LENGTH)
+  ) {
+    return { error: 'participant.name is invalid' };
+  }
   const text = typeof message.text === 'string' ? message.text : undefined;
   const html = typeof message.html === 'string' ? message.html : undefined;
   if (!text && !html) {
     return { error: 'message.text or message.html is required' };
   }
-  if (value.subject !== undefined && typeof value.subject !== 'string') {
-    return { error: 'subject must be a string' };
+  if (
+    (text?.length ?? 0) > MAX_BODY_LENGTH ||
+    (html?.length ?? 0) > MAX_BODY_LENGTH
+  ) {
+    return { error: 'message.text and message.html are limited to 1 MiB each' };
+  }
+  if (
+    value.subject !== undefined &&
+    !isHeaderSafeText(value.subject, MAX_SUBJECT_LENGTH)
+  ) {
+    return {
+      error: 'subject must be a header-safe string of at most 255 characters',
+    };
   }
   return {
     value: {
