@@ -17,7 +17,7 @@ export interface TestDbClient {
 }
 
 export function createWebhookTests(createClient: () => TestDbClient) {
-  const endpoint = `${TEST_CONFIG.appBaseUrl}/api/webhooks/resend`;
+  const endpoint = `${TEST_CONFIG.appBaseUrl}/api/webhooks/v1/resend`;
 
   describe('Resend webhook endpoint', () => {
     let dbClient: TestDbClient;

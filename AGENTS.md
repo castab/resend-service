@@ -22,7 +22,7 @@
 
 ## Webhook Invariants
 
-- The public webhook route is `POST /api/webhooks/resend`.
+- The public webhook route is `POST /api/webhooks/v1/resend`.
 - Verify the exact raw request body before parsing or transforming it. Calling
   `request.json()` before Svix verification breaks signature validation.
 - Require `svix-id`, `svix-timestamp`, and `svix-signature` headers.
