@@ -1,435 +1,287 @@
 # resend-service
 
-`resend-service` receives [Resend](https://resend.com) webhooks, verifies
-their Svix signatures, and stores selected event data in PostgreSQL.
-
-[Railway](https://railway.com) is the recommended deployment target and is
-configured in this repository. The included Dockerfile builds a portable
-container image that can run on any compatible container platform.
-
-This project was originally based on
-[`resend/resend-webhooks-ingester`](https://github.com/resend/resend-webhooks-ingester).
-It has been narrowed to a single PostgreSQL-backed service that can be extended
-with additional application capabilities over time.
-
-## Current Scope
-
-- Accepts Resend webhooks at `POST /api/webhooks/v1/resend`
-- Verifies the raw request body with the Resend webhook signing secret
-- Stores email, contact, and domain events in PostgreSQL
-- Ignores duplicate deliveries using the unique `svix-id` header
-- Manages the database schema with Prisma migrations
-- Publishes an OpenAPI specification and Swagger UI for the live API
-- Builds as a standalone Next.js application and Docker image
-
-The service stores normalized fields used by its current schema. It does not
-store the complete original webhook payload.
+`resend-service` is an npm-workspaces monorepo for receiving Resend webhooks
+and exposing a private API for topic-centered email conversations. Two
+independently deployable Next.js applications share one PostgreSQL schema and
+the same email-threading implementation.
 
 ## Architecture
 
 ```text
-Resend
-  -> HTTPS endpoint
-  -> Next.js webhook route
-  -> Svix signature verification
-  -> Prisma
-  -> PostgreSQL
+Internet
+  -> webhook public Railway domain
+  -> POST /api/webhooks/resend/v1
+  -> Svix verification
+  -> Resend Receiving API enrichment
+  -> PostgreSQL webhook ledger + conversation projection
+
+Adjacent Railway services
+  -> conversation-api.railway.internal:<conversation-service-port>
+  -> bearer-authenticated conversation API
+  -> Resend Sending API
+  -> PostgreSQL conversation projection
 ```
 
-The application uses:
+The applications have deliberately different network boundaries:
 
-- Node.js 22
-- Next.js 16 and React 19
-- Prisma 7 with the PostgreSQL driver adapter
-- PostgreSQL 18 for local development and CI
-- Svix for webhook signature verification
+| Application | Exposure | Responsibility |
+| --- | --- | --- |
+| `apps/webhook` | Public HTTPS | Verify and ingest Resend webhooks |
+| `apps/conversation-api` | Railway private network only | Start, continue, assign, and read conversations |
 
-## Supported Events
+Railway private networking is environment-isolated and encrypted. The private
+API also requires a bearer token so network reachability does not automatically
+grant permission to send or read email.
 
-### Email Events
+## Repository Layout
 
-| Event | Description |
-| --- | --- |
-| `email.sent` | Resend accepted the email for delivery |
-| `email.delivered` | The email was delivered |
-| `email.delivery_delayed` | Delivery was temporarily delayed |
-| `email.bounced` | Delivery permanently failed |
-| `email.complained` | The recipient reported the email as spam |
-| `email.opened` | The recipient opened the email |
-| `email.clicked` | The recipient clicked a link |
-| `email.failed` | Resend could not send the email |
-| `email.scheduled` | The email was scheduled for later delivery |
-| `email.suppressed` | Resend suppressed the email |
-| `email.received` | Resend received an inbound email |
+```text
+apps/
+  webhook/                    # Public Resend webhook application
+  conversation-api/           # Private conversation application
+packages/
+  database/                   # Prisma schema, migrations, and generated client
+  email/                      # Resend client, types, projection, and threading
+tests/                        # Shared integration-test support
+Dockerfile.webhook
+Dockerfile.conversation-api
+docker-compose.yml
+package.json                  # Workspace orchestration
+```
 
-### Contact Events
+Each application and package has its own README with local details. Repository
+rules are in the root and nested `AGENTS.md` files.
 
-| Event | Description |
-| --- | --- |
-| `contact.created` | A contact was created |
-| `contact.updated` | A contact was updated |
-| `contact.deleted` | A contact was deleted |
+## API Routes
 
-### Domain Events
+Routes follow `/api/{capability}/{integration?}/v{major}`.
 
-| Event | Description |
-| --- | --- |
-| `domain.created` | A domain was created |
-| `domain.updated` | A domain was updated |
-| `domain.deleted` | A domain was deleted |
+Public webhook application:
 
-## Data Storage
+```text
+POST /api/webhooks/resend/v1
+GET  /docs
+GET  /openapi.json
+GET  /api/health/v1
+```
 
-Events are appended to three PostgreSQL tables:
+Private conversation application:
 
-| Table | Contents |
-| --- | --- |
-| `resend_wh_emails` | Delivery lifecycle, sender, recipients, subject, tags, bounce data, and click data |
-| `resend_wh_contacts` | Contact identity, audience, segments, names, and subscription state |
-| `resend_wh_domains` | Domain identity, status, region, and DNS records |
+```text
+POST  /api/conversations/v1
+GET   /api/conversations/v1?assignment=unassigned
+GET   /api/conversations/v1/{conversationId}
+PATCH /api/conversations/v1/{conversationId}
+POST  /api/conversations/v1/{conversationId}/messages
+GET   /api/conversations/v1/topics/{topicType}/{externalTopicId}
+GET   /docs
+GET   /openapi.json
+GET   /api/health/v1
+```
 
-Each row uses a database-generated UUIDv7 primary key.
+The former `/api/webhooks/v1/resend` route is intentionally unavailable.
 
-Each table has its own unique constraint on `svix_id`. Re-delivering the same
-event to the same event family is acknowledged with `200` without inserting a
-second row.
+## Conversation Model
 
-### Retention
+A topic is identified by a caller-owned `(topicType, externalTopicId)` pair.
+Each topic can own one conversation. A conversation currently has one external
+participant and one configured sender mailbox.
 
-Stored events are retained indefinitely. The application does not currently
-delete, truncate, archive, or expire webhook records. The stored fields can
-include personal or sensitive data such as email addresses, names, subjects,
-IP addresses, and user-agent strings. Operators are responsible for access
-control, backups, and any retention policy required for their environment.
+Messages store:
+
+- Their conversation and optional parent message
+- Resend and RFC Message-ID identifiers
+- In-Reply-To and ordered References ancestry
+- Direction and send state
+- Sender, recipient, subject, text, and HTML
+- Provider and persistence timestamps
+
+Inbound messages are attached using RFC headers. An unmatched inbound message
+creates an unassigned conversation that can later be associated with a topic.
+Email delivery is unordered, so the projector also resolves children that
+arrived before their parent.
+
+Attachments are not retrieved or persisted. Full inbound text and HTML bodies
+are stored. HTML returned by the private API is untrusted and must be sanitized
+before browser rendering.
 
 ## Requirements
 
 - Node.js 22 or newer
 - npm 10 or newer
-- PostgreSQL 18 or newer, for native UUIDv7 generation
-- Docker and Docker Compose for the included local PostgreSQL service
+- PostgreSQL 18 or newer for native `uuidv7()`
+- A Resend API key
+- A Resend webhook signing secret
+- A verified Resend sending/receiving domain
 
 ## Configuration
 
-Create a `.env` file in the repository root:
+Create an ignored `.env` for local development:
 
 ```env
-RESEND_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxx
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
+RESEND_API_KEY=re_xxxxxxxxx
+RESEND_WEBHOOK_SECRET=whsec_xxxxxxxxx
+RESEND_FROM=Mailbox <mailbox@example.com>
+CONVERSATION_API_KEY=replace-with-a-long-random-secret
 ```
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `RESEND_WEBHOOK_SECRET` | Yes | Signing secret for the webhook endpoint configured in Resend |
-| `DATABASE_URL` | Yes | PostgreSQL connection URL used by the application and Prisma migrations |
+Environment ownership:
 
-A Resend API key is not required because this service receives webhooks and
-does not call the Resend API.
+| Variable | Webhook | Conversation API | Purpose |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | Required | Required | Shared PostgreSQL connection |
+| `RESEND_API_KEY` | Required | Required | Retrieve inbound and send outbound email |
+| `RESEND_WEBHOOK_SECRET` | Required | Not used | Verify Svix signatures |
+| `RESEND_FROM` | Not used | Required | Configured sender identity |
+| `CONVERSATION_API_KEY` | Not used | Required | Private API bearer credential |
+| `RESEND_API_BASE_URL` | Optional | Optional | Test-only Resend-compatible base URL |
 
-Use `.env` for local Prisma commands. `prisma.config.ts` loads this file with
-`dotenv`; a value stored only in `.env.local` will not be available to the
-Prisma CLI.
+Prisma CLI commands load `.env` through
+`packages/database/prisma.config.ts`. Values stored only in `.env.local` are
+not available to Prisma.
 
 ## Local Development
 
-Install dependencies:
+Install dependencies and start PostgreSQL:
 
 ```bash
 npm ci
+docker compose up -d
+npm run db:setup
 ```
 
-Start PostgreSQL:
+Start the applications in separate terminals:
 
 ```bash
-docker compose up -d
+npm run dev:webhook
+npm run dev:conversation
 ```
 
-Generate the Prisma client and apply existing migrations:
+The webhook app listens on port 3000. The conversation app uses port 3001 in
+development. Their Swagger pages are available at:
+
+```text
+http://localhost:3000/docs
+http://localhost:3001/docs
+```
+
+The Compose `apps` profile can build both production images locally:
+
+```bash
+docker compose --profile apps up --build
+```
+
+## Database Changes
+
+`packages/database/prisma/schema.prisma` and its checked-in migrations are the
+database sources of truth. Never edit an already deployed migration.
+
+```bash
+npm run db:validate
+npm run db:generate
+npm run db:migrate:deploy
+```
+
+Both Railway services run `prisma migrate deploy` before starting. Prisma
+coordinates concurrent attempts. Because Railway deploys services
+independently, migrations must use expand/contract sequencing so old and new
+application versions can temporarily share the schema.
+
+Generated Prisma files live under
+`packages/database/src/generated/prisma`, are ignored by Git, and must not be
+edited manually.
+
+## Testing
+
+Create an ignored `.env.test`:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
+RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
+RESEND_API_KEY=test-resend-api-key
+RESEND_API_BASE_URL=http://localhost:4010
+RESEND_FROM=Test Mailbox <mailbox@example.com>
+CONVERSATION_API_KEY=test-conversation-api-key
+APP_BASE_URL=http://localhost:3000
+CONVERSATION_BASE_URL=http://localhost:3001
+```
+
+Prepare the database, then start each test application in its own terminal. Run
+the PostgreSQL suite from a third terminal. The tests start a bounded local fake
+Resend server and never call the real Resend API.
 
 ```bash
 npm run db:setup
 ```
 
-Start the development server:
+```bash
+npm run dev:webhook:test
+```
 
 ```bash
-npm run dev
+npm run dev:conversation:test
 ```
-
-The webhook endpoint is available at:
-
-```text
-http://localhost:3000/api/webhooks/v1/resend
-```
-
-The interactive API documentation and its OpenAPI source are available at:
-
-```text
-http://localhost:3000/docs
-http://localhost:3000/openapi.json
-```
-
-Resend needs a publicly accessible HTTPS endpoint. To receive real webhook
-events during local development, expose the local server with a trusted tunnel
-and register this path on the tunnel's public URL.
-
-## API Documentation
-
-The machine-readable API contract is maintained in
-[`public/openapi.json`](public/openapi.json) using OpenAPI 3.1. Swagger UI serves
-that contract publicly at `/docs`, while `/openapi.json` exposes the source
-document directly.
-
-Validate the contract after changing an endpoint or its documented behavior:
-
-```bash
-npm run api:validate
-```
-
-Swagger UI includes interactive request controls, but it cannot generate valid
-Svix signatures. A request sent from the UI must provide `svix-id`,
-`svix-timestamp`, and `svix-signature` values generated for the exact raw JSON
-body. Resend remains the normal caller of the webhook endpoint.
-
-The root path intentionally has no page and returns `404`. `/docs` is the
-canonical application documentation URL.
-
-## Webhook API
-
-### `POST /api/webhooks/v1/resend`
-
-The route reads the raw request body, verifies its signature, classifies the
-event, and writes it to the corresponding table.
-
-Required request headers:
-
-| Header | Purpose |
-| --- | --- |
-| `svix-id` | Unique webhook message identifier used for idempotency |
-| `svix-timestamp` | Timestamp included in signature verification |
-| `svix-signature` | Svix signature for the raw request body |
-
-Responses:
-
-| Status | Body | Meaning |
-| --- | --- | --- |
-| `200` | `{"received":true}` | The event was stored or had already been stored |
-| `400` | Error response | Required headers are missing or the event type is unsupported |
-| `401` | Error response | Signature verification failed |
-| `500` | Error response | Configuration or database processing failed |
-
-Resend provides at-least-once delivery and does not guarantee event ordering.
-Use event timestamps when chronological processing matters. Non-`200`
-responses can cause Resend to retry a delivery.
-
-## Configure Resend
-
-1. Deploy the service to a publicly accessible HTTPS URL.
-2. Open the [Webhooks page](https://resend.com/webhooks) in Resend.
-3. Add `https://webhooks.example.com/api/webhooks/v1/resend` as the endpoint.
-4. Select the email, contact, and domain events the service should receive.
-5. Copy the webhook signing secret into `RESEND_WEBHOOK_SECRET` on the host.
-6. Redeploy or restart the service after setting the secret.
-
-The secret belongs to the configured webhook endpoint. Do not commit it to the
-repository or expose it to client-side code.
-
-## Deployment
-
-### Railway (Recommended)
-
-The checked-in `railway.json` uses the Dockerfile builder and runs
-`npm run db:migrate:deploy` before each deployment.
-
-1. Create a Railway project.
-2. Add a PostgreSQL service to the project.
-3. Add this repository as an application service.
-4. Set `DATABASE_URL` to a reference to the PostgreSQL service's connection
-   URL.
-5. Set `RESEND_WEBHOOK_SECRET` to the signing secret from Resend.
-6. Deploy the application service.
-7. Generate a Railway domain or attach a custom domain.
-8. Configure `https://webhooks.example.com/api/webhooks/v1/resend` in Resend.
-
-Railway builds the image from `Dockerfile`, applies migrations through the
-pre-deploy command, and starts the standalone Next.js server. The container
-listens on port `3000` by default and accepts a platform-provided `PORT`
-override.
-
-### Docker and Other Platforms
-
-Build the image from the repository:
-
-```bash
-docker build -t resend-service .
-```
-
-Apply the checked-in migrations before starting a new application version:
-
-```bash
-docker run --rm \
-  -e DATABASE_URL="$DATABASE_URL" \
-  resend-service npm run db:migrate:deploy
-```
-
-Run the application:
-
-```bash
-docker run --rm -p 3000:3000 \
-  -e DATABASE_URL="$DATABASE_URL" \
-  -e RESEND_WEBHOOK_SECRET="$RESEND_WEBHOOK_SECRET" \
-  resend-service
-```
-
-The image is OCI-compatible and can be deployed to container services other
-than Railway. The target platform must provide:
-
-- A reachable PostgreSQL 18 or newer database
-- The two required environment variables
-- A migration step before the new application version starts
-- Public HTTPS routing to the container
-- Appropriate restart, health-check, scaling, backup, and secret-management
-  policies
-
-This repository does not currently publish a prebuilt image. Build the image
-from the checked-in Dockerfile or configure the target platform to do so.
-
-## Development Commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run api:validate` | Validate and lint the OpenAPI specification |
-| `npm run dev` | Start the Next.js development server |
-| `npm run dev:test` | Start Next.js with variables from `.env.test` |
-| `npm run build` | Generate Prisma Client and create a production build |
-| `npm start` | Start an existing Next.js production build |
-| `npm run lint` | Check formatting and lint rules with Biome |
-| `npm run lint:fix` | Apply Biome formatting and safe fixes |
-| `npm test` | Run the Vitest suite once |
-| `npm run test:postgresql` | Run the PostgreSQL integration suite |
-| `npm run test:watch` | Run Vitest in watch mode |
-| `npm run db:generate` | Regenerate Prisma Client |
-| `npm run db:migrate:deploy` | Apply pending migrations without creating new ones |
-| `npm run db:setup` | Generate Prisma Client and apply pending migrations |
-| `npm run db:studio` | Open Prisma Studio using `.env.test` |
-| `npm run db:validate` | Validate the Prisma schema and configuration |
-
-## Testing
-
-The integration suite sends signed webhook fixtures to a running application
-and verifies the resulting PostgreSQL rows.
-
-Create an ignored `.env.test` file:
-
-```env
-RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
-APP_BASE_URL=http://localhost:3000
-```
-
-Prepare the database and start the test server:
-
-```bash
-docker compose up -d
-npx dotenv -e .env.test -- npm run db:setup
-npm run dev:test
-```
-
-In another terminal, run:
 
 ```bash
 npm run test:postgresql
 ```
 
-The test suite covers all declared event types, duplicate deliveries, invalid
-signatures, and missing Svix headers. CI also runs schema validation, linting,
-and the production build.
-
-## Database Changes
-
-`prisma/schema.prisma` and the files in `prisma/migrations` are the database
-sources of truth. After changing the schema, create a new migration and
-regenerate Prisma Client:
+Repository checks:
 
 ```bash
-npx prisma migrate dev --name describe_the_change
-npm run db:generate
+npm run db:validate
+npm run api:validate
+npm run lint
+npm run build
+npm run test:postgresql
 ```
 
-Do not manually edit `src/generated/prisma`. It is generated locally and is
-excluded from version control.
+## Docker
 
-## Project Structure
+Build each independently deployable image from the repository root:
 
-```text
-.
-|-- prisma/
-|   |-- migrations/                 # Versioned PostgreSQL migrations
-|   `-- schema.prisma               # Prisma data model
-|-- src/
-|   |-- app/api/webhooks/v1/resend/ # Resend webhook route
-|   |-- app/docs/                   # Public Swagger UI
-|   |-- lib/                        # Prisma and webhook handling
-|   `-- types/                      # Resend webhook types
-|-- tests/
-|   |-- helpers/                    # Fixtures, signing, and DB assertions
-|   `-- integration/                # PostgreSQL integration tests
-|-- Dockerfile                      # Portable production image
-|-- docker-compose.yml              # Local PostgreSQL service
-|-- public/openapi.json             # OpenAPI API contract
-|-- prisma.config.ts                # Prisma CLI configuration
-`-- railway.json                    # Recommended Railway deployment settings
+```bash
+docker build -f Dockerfile.webhook -t resend-webhook .
+docker build -f Dockerfile.conversation-api -t resend-conversation-api .
 ```
 
-## Operational Notes
+Both images contain migration tooling and the shared schema. On platforms
+without Railway pre-deploy commands, run `npm run db:migrate:deploy` from one
+image before starting application containers.
 
-- Preserve the raw request body until Svix verification is complete.
-- Treat `RESEND_WEBHOOK_SECRET` and `DATABASE_URL` as secrets.
-- Restrict direct database access because stored records can contain personal
-  data.
-- Monitor `500` responses and database errors; repeated failures prevent event
-  persistence and trigger webhook retries.
-- The root path intentionally returns `404` and is not a readiness or liveness
-  check. API documentation is served at `/docs`.
-- The service has no read API, administrative API, retention job, or event
-  replay worker.
+## Railway
 
-## Troubleshooting
+Create two services from this repository and keep the repository root as the
+build context. Shared workspace packages are outside each app directory.
 
-### Webhooks are not received
+Webhook service:
 
-- Confirm the configured URL ends with `/api/webhooks/v1/resend`.
-- Confirm the service is publicly accessible over HTTPS.
-- Check the webhook delivery and retry history in Resend.
+- Select `/apps/webhook/railway.json` as its config file
+- Assign a public Railway or custom domain
+- Configure `DATABASE_URL`, `RESEND_API_KEY`, and `RESEND_WEBHOOK_SECRET`
+- Configure Resend to deliver to
+  `https://<public-host>/api/webhooks/resend/v1`
 
-### Signature verification fails
+Conversation service:
 
-- Confirm `RESEND_WEBHOOK_SECRET` belongs to the configured endpoint.
-- Redeploy or restart after changing the secret.
-- Ensure proxies preserve the request body unchanged.
+- Select `/apps/conversation-api/railway.json` as its config file
+- Do not generate or attach a public domain
+- Configure `DATABASE_URL`, `RESEND_API_KEY`, `RESEND_FROM`, and
+  `CONVERSATION_API_KEY`
+- In each caller, define `CONVERSATION_API_URL` with Railway references:
+  `http://${{conversation-api.RAILWAY_PRIVATE_DOMAIN}}:${{conversation-api.PORT}}`
 
-### Database insertion fails
+Both configs use `/api/health/v1` as the Railway readiness check. It validates
+required configuration and database access without returning sensitive details.
+Both services watch their app plus shared build inputs and packages.
 
-- Confirm `DATABASE_URL` is available to both migrations and the application.
-- Run `npm run db:migrate:deploy` against the target database.
-- Confirm the application can reach PostgreSQL from its runtime network.
-- Review application logs for the database error.
+## Retention and Security
 
-### Prisma reports `P3005`
+Webhook ledger rows and projected conversations are retained indefinitely.
+There is currently no deletion, archival, or expiration workflow. Stored data
+can contain personal or sensitive information, including addresses, names,
+subjects, message bodies, IP addresses, and user agents.
 
-A non-empty database created before Prisma migration tracking must be
-[baselined](https://www.prisma.io/docs/orm/prisma-migrate/workflows/baselining)
-before `prisma migrate deploy` can manage it. Confirm that its existing schema
-matches the initial migration before marking that migration as applied. Do not
-reset a production database to resolve this error.
-
-## Resources
-
-- [Resend webhooks](https://resend.com/docs/webhooks/introduction)
-- [Resend event types](https://resend.com/docs/webhooks/event-types)
-- [Verify webhook requests](https://resend.com/docs/webhooks/verify-webhooks-requests)
-- [Webhook retries and replays](https://resend.com/docs/webhooks/retries-and-replays)
-- [OpenAPI Specification](https://spec.openapis.org/oas/latest.html)
-- [Swagger UI](https://swagger.io/tools/swagger-ui/)
-- [Railway Dockerfiles](https://docs.railway.com/guides/dockerfiles)
-- [Prisma migrations](https://www.prisma.io/docs/orm/prisma-migrate)
+Protect PostgreSQL, the private bearer token, Resend API key, and webhook secret.
+Do not expose the conversation application through a Railway public domain.

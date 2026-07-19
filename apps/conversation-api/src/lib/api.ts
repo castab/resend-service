@@ -1,0 +1,202 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import {
+  type EmailConversation,
+  type EmailMessage,
+  getPrismaClient,
+  type Prisma,
+} from '@resend-service/database';
+import { NextResponse } from 'next/server';
+
+export function authorize(request: Request): NextResponse | null {
+  const expected = process.env.CONVERSATION_API_KEY;
+  if (!expected) {
+    console.error('Missing CONVERSATION_API_KEY environment variable');
+    return NextResponse.json(
+      { error: 'Server misconfiguration' },
+      { status: 500 },
+    );
+  }
+
+  const authorization = request.headers.get('authorization');
+  const provided = authorization?.startsWith('Bearer ')
+    ? authorization.slice(7)
+    : '';
+  const expectedHash = createHash('sha256').update(expected).digest();
+  const providedHash = createHash('sha256').update(provided).digest();
+
+  if (!provided || !timingSafeEqual(expectedHash, providedHash)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return null;
+}
+
+export async function readJson(
+  request: Request,
+): Promise<{ value: unknown } | { response: NextResponse }> {
+  try {
+    return { value: await request.json() };
+  } catch {
+    return {
+      response: NextResponse.json(
+        { error: 'Request body must be valid JSON' },
+        { status: 400 },
+      ),
+    };
+  }
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function isEmailAddress(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 320 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  );
+}
+
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+export function serializeMessage(message: EmailMessage) {
+  return {
+    id: message.id,
+    parentMessageId: message.parentMessageId,
+    direction: message.direction.toLowerCase(),
+    state: message.state.toLowerCase(),
+    stateDetail: message.stateDetail,
+    resendEmailId: message.resendEmailId,
+    internetMessageId: message.internetMessageId,
+    from: {
+      address: message.fromAddress,
+      name: message.fromName,
+    },
+    to: message.toAddress,
+    replyTo: message.replyToAddress,
+    subject: message.subject,
+    text: message.textBody,
+    html: message.htmlBody,
+    createdAt: message.emailCreatedAt.toISOString(),
+  };
+}
+
+export function serializeConversation(
+  conversation: EmailConversation,
+  messages: EmailMessage[],
+  hasMoreBefore = false,
+) {
+  return {
+    id: conversation.id,
+    topic:
+      conversation.topicType && conversation.externalTopicId
+        ? {
+            type: conversation.topicType,
+            externalId: conversation.externalTopicId,
+            title: conversation.title,
+          }
+        : null,
+    title: conversation.title,
+    subject: conversation.subject,
+    participant: {
+      address: conversation.participantAddress,
+      name: conversation.participantName,
+    },
+    lastMessageAt: conversation.lastMessageAt.toISOString(),
+    createdAt: conversation.createdAt.toISOString(),
+    updatedAt: conversation.updatedAt.toISOString(),
+    messages: messages.map(serializeMessage),
+    page: {
+      hasMoreBefore,
+      before: hasMoreBefore ? (messages[0]?.id ?? null) : null,
+    },
+  };
+}
+
+export function sendResultResponse(
+  message: EmailMessage,
+  conversationId: string,
+) {
+  const failed =
+    message.state === 'FAILED' || message.state === 'INDETERMINATE';
+  return NextResponse.json(
+    {
+      ...(failed ? { error: 'Email was not confirmed as sent' } : {}),
+      conversationId,
+      message: serializeMessage(message),
+    },
+    {
+      status: failed ? 502 : message.state === 'PENDING' ? 202 : 200,
+    },
+  );
+}
+
+export function getPageLimit(request: Request): number {
+  const value = new URL(request.url).searchParams.get('limit');
+  if (!value) {
+    return 50;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 100) : 50;
+}
+
+export async function getConversationResponse(
+  request: Request,
+  where: Prisma.EmailConversationWhereUniqueInput,
+) {
+  const client = getPrismaClient();
+  const conversation = await client.emailConversation.findUnique({ where });
+  if (!conversation) {
+    return NextResponse.json(
+      { error: 'Conversation not found' },
+      { status: 404 },
+    );
+  }
+
+  const limit = getPageLimit(request);
+  const beforeId = new URL(request.url).searchParams.get('before');
+  if (beforeId && !isUuid(beforeId)) {
+    return NextResponse.json(
+      { error: 'Invalid message cursor' },
+      { status: 400 },
+    );
+  }
+  const before = beforeId
+    ? await client.emailMessage.findFirst({
+        where: { id: beforeId, conversationId: conversation.id },
+      })
+    : null;
+  if (beforeId && !before) {
+    return NextResponse.json(
+      { error: 'Invalid message cursor' },
+      { status: 400 },
+    );
+  }
+
+  const messages = await client.emailMessage.findMany({
+    where: {
+      conversationId: conversation.id,
+      ...(before
+        ? {
+            OR: [
+              { emailCreatedAt: { lt: before.emailCreatedAt } },
+              { emailCreatedAt: before.emailCreatedAt, id: { lt: before.id } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ emailCreatedAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+  });
+  const hasMoreBefore = messages.length > limit;
+  const page = messages.slice(0, limit).reverse();
+  return NextResponse.json(
+    serializeConversation(conversation, page, hasMoreBefore),
+  );
+}

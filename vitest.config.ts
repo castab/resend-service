@@ -6,16 +6,17 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.test.ts'],
+    include: ['apps/*/tests/**/*.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     bail: 1,
-    fileParallelism: true,
+    fileParallelism: false,
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@tests': path.resolve(__dirname, './tests'),
+      '@webhook': path.resolve(__dirname, './apps/webhook/src'),
+      '@webhook-tests': path.resolve(__dirname, './apps/webhook/tests'),
+      '@test-support': path.resolve(__dirname, './tests'),
     },
   },
 });

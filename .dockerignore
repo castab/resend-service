@@ -2,8 +2,9 @@
 node_modules
 
 # Build outputs
-.next
+**/.next
 out
+/src/generated
 
 # Git
 .git
@@ -20,7 +21,7 @@ out
 !.env.example
 
 # Tests
-tests
+**/tests
 vitest.config.ts
 coverage
 
