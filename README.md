@@ -14,7 +14,7 @@ with additional application capabilities over time.
 
 ## Current Scope
 
-- Accepts Resend webhooks at `POST /api/webhook/resend`
+- Accepts Resend webhooks at `POST /api/webhooks/resend`
 - Verifies the raw request body with the Resend webhook signing secret
 - Stores email, contact, and domain events in PostgreSQL
 - Ignores duplicate deliveries using the unique `svix-id` header
@@ -155,7 +155,7 @@ npm run dev
 The webhook endpoint is available at:
 
 ```text
-http://localhost:3000/api/webhook/resend
+http://localhost:3000/api/webhooks/resend
 ```
 
 Resend needs a publicly accessible HTTPS endpoint. To receive real webhook
@@ -164,7 +164,7 @@ and register this path on the tunnel's public URL.
 
 ## Webhook API
 
-### `POST /api/webhook/resend`
+### `POST /api/webhooks/resend`
 
 The route reads the raw request body, verifies its signature, classifies the
 event, and writes it to the corresponding table.
@@ -194,7 +194,7 @@ responses can cause Resend to retry a delivery.
 
 1. Deploy the service to a publicly accessible HTTPS URL.
 2. Open the [Webhooks page](https://resend.com/webhooks) in Resend.
-3. Add `https://webhooks.example.com/api/webhook/resend` as the endpoint.
+3. Add `https://webhooks.example.com/api/webhooks/resend` as the endpoint.
 4. Select the email, contact, and domain events the service should receive.
 5. Copy the webhook signing secret into `RESEND_WEBHOOK_SECRET` on the host.
 6. Redeploy or restart the service after setting the secret.
@@ -217,7 +217,7 @@ The checked-in `railway.json` uses the Dockerfile builder and runs
 5. Set `RESEND_WEBHOOK_SECRET` to the signing secret from Resend.
 6. Deploy the application service.
 7. Generate a Railway domain or attach a custom domain.
-8. Configure `https://webhooks.example.com/api/webhook/resend` in Resend.
+8. Configure `https://webhooks.example.com/api/webhooks/resend` in Resend.
 
 Railway builds the image from `Dockerfile`, applies migrations through the
 pre-deploy command, and starts the standalone Next.js server. The container
@@ -334,7 +334,7 @@ excluded from version control.
 |   |-- migrations/                 # Versioned PostgreSQL migrations
 |   `-- schema.prisma               # Prisma data model
 |-- src/
-|   |-- app/api/webhook/resend/     # Resend webhook route
+|   |-- app/api/webhooks/resend/    # Resend webhook route
 |   |-- lib/                        # Prisma and webhook handling
 |   `-- types/                      # Resend webhook types
 |-- tests/
@@ -362,7 +362,7 @@ excluded from version control.
 
 ### Webhooks are not received
 
-- Confirm the configured URL ends with `/api/webhook/resend`.
+- Confirm the configured URL ends with `/api/webhooks/resend`.
 - Confirm the service is publicly accessible over HTTPS.
 - Check the webhook delivery and retry history in Resend.
 
