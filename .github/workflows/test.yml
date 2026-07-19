@@ -12,7 +12,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     services:
       postgresql:
@@ -48,25 +48,78 @@ jobs:
       - name: Validate
         run: |
           npm run db:validate
+          npm run api:validate
           npm run lint
           npm run build
 
-      - name: Start dev server
-        run: npm run dev &
+      - name: Start applications
+        run: |
+          npm run dev:webhook > webhook.log 2>&1 &
+          npm run dev:conversation > conversation.log 2>&1 &
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
+          RESEND_API_KEY: test-resend-api-key
+          RESEND_API_BASE_URL: http://localhost:4010
+          RESEND_FROM: "Test Mailbox <mailbox@example.com>"
+          CONVERSATION_API_KEY: test-conversation-api-key
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
 
-      - name: Wait for server
+      - name: Wait for applications
         run: |
           for i in {1..30}; do
-            curl -s http://localhost:3000 && break
+            curl --fail --silent http://localhost:3000/api/health/v1 && break
             sleep 1
           done
+          curl --fail --silent http://localhost:3000/api/health/v1 > /dev/null || (cat webhook.log && exit 1)
+          for i in {1..30}; do
+            curl --fail --silent http://localhost:3001/api/health/v1 && break
+            sleep 1
+          done
+          curl --fail --silent http://localhost:3001/api/health/v1 > /dev/null || (cat conversation.log && exit 1)
 
       - name: Run tests
-        run: npm test
+        run: npm run test:postgresql
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
+          RESEND_API_KEY: test-resend-api-key
+          RESEND_API_BASE_URL: http://localhost:4010
+          RESEND_FROM: "Test Mailbox <mailbox@example.com>"
+          CONVERSATION_API_KEY: test-conversation-api-key
           APP_BASE_URL: http://localhost:3000
+          CONVERSATION_BASE_URL: http://localhost:3001
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
+
+      - name: Build production images
+        run: |
+          docker build -f Dockerfile.webhook -t resend-webhook:test .
+          docker build -f Dockerfile.conversation-api -t resend-conversation-api:test .
+
+      - name: Smoke test production images
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
+            resend-webhook:test npm run db:migrate:deploy
+          docker run -d --name webhook-smoke --network host \
+            -e PORT=3100 \
+            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
+            -e RESEND_API_KEY=test-resend-api-key \
+            -e RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ= \
+            resend-webhook:test
+          docker run -d --name conversation-smoke --network host \
+            -e PORT=3101 \
+            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
+            -e RESEND_API_KEY=test-resend-api-key \
+            -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
+            -e CONVERSATION_API_KEY=test-conversation-api-key \
+            resend-conversation-api:test
+          for i in {1..30}; do
+            curl --fail --silent http://localhost:3100/api/health/v1 && break
+            sleep 1
+          done
+          curl --fail --silent http://localhost:3100/api/health/v1 > /dev/null || (docker logs webhook-smoke && exit 1)
+          for i in {1..30}; do
+            curl --fail --silent http://localhost:3101/api/health/v1 && break
+            sleep 1
+          done
+          curl --fail --silent http://localhost:3101/api/health/v1 > /dev/null || (docker logs conversation-smoke && exit 1)
+          docker rm -f webhook-smoke conversation-smoke

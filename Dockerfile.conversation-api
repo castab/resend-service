@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22-alpine AS base
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json package-lock.json ./
+COPY apps/webhook/package.json ./apps/webhook/package.json
+COPY apps/conversation-api/package.json ./apps/conversation-api/package.json
+COPY packages/database/package.json ./packages/database/package.json
+COPY packages/email/package.json ./packages/email/package.json
+RUN npm ci
+
+FROM base AS prod-deps
+COPY package.json package-lock.json ./
+COPY apps/webhook/package.json ./apps/webhook/package.json
+COPY apps/conversation-api/package.json ./apps/conversation-api/package.json
+COPY packages/database/package.json ./packages/database/package.json
+COPY packages/email/package.json ./packages/email/package.json
+RUN npm ci --omit=dev
+
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run db:generate && npm run build:conversation
+
+FROM base AS runner
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/apps/webhook/package.json ./apps/webhook/package.json
+COPY --from=builder --chown=nextjs:nodejs /app/apps/conversation-api/package.json ./apps/conversation-api/package.json
+COPY --from=builder --chown=nextjs:nodejs /app/packages/database ./packages/database
+COPY --from=builder --chown=nextjs:nodejs /app/packages/email ./packages/email
+COPY --from=builder --chown=nextjs:nodejs /app/apps/conversation-api/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/conversation-api/.next/static ./apps/conversation-api/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/conversation-api/public ./apps/conversation-api/public
+
+USER nextjs
+EXPOSE 3000
+CMD ["node", "apps/conversation-api/server.js"]
