@@ -252,12 +252,30 @@ image before starting application containers.
 
 ## Railway
 
-Create two services from this repository and keep the repository root as the
-build context. Shared workspace packages are outside each app directory.
+This repository is a [shared monorepo](https://docs.railway.com/deployments/monorepo)
+in Railway's taxonomy: both apps depend on the workspace packages in
+`packages/`, so every image must be built from the repository root. Create two
+services from this repository and configure each as follows.
+
+Settings common to both services:
+
+- Leave **Root Directory** unset (`/`). Setting it to an app directory would
+  shrink the Docker build context and exclude the shared `packages/*`
+  workspaces that both Dockerfiles copy.
+- Set the **Config-as-code** file path explicitly under Service → Settings →
+  Config-as-code. Railway only auto-detects `railway.json` at the service's
+  root directory, and the config file path does not follow the Root Directory
+  setting — it is always an absolute path from the repository root.
+
+If the config file path is not set, Railway never reads the app's
+`railway.json`, falls back to the Railpack builder on the repository root, and
+fails with a "no start command" error because the root `package.json`
+intentionally has no `start` script. Setting the config path is what selects
+the `DOCKERFILE` builder and the app's `dockerfilePath`.
 
 Webhook service:
 
-- Select `/apps/webhook/railway.json` as its config file
+- Set the config-as-code file path to `/apps/webhook/railway.json`
 - Assign a public Railway or custom domain
 - Configure `DATABASE_URL`, `RESEND_API_KEY`, and `RESEND_WEBHOOK_SECRET`
 - Configure Resend to deliver to
@@ -265,7 +283,7 @@ Webhook service:
 
 Conversation service:
 
-- Select `/apps/conversation-api/railway.json` as its config file
+- Set the config-as-code file path to `/apps/conversation-api/railway.json`
 - Do not generate or attach a public domain
 - Configure `DATABASE_URL`, `RESEND_API_KEY`, `RESEND_FROM`, and
   `CONVERSATION_API_KEY`
@@ -277,7 +295,9 @@ Conversation service:
 
 Both configs use `/api/health/v1` as the Railway readiness check. It validates
 required configuration and database access without returning sensitive details.
-Both services watch their app plus shared build inputs and packages.
+Both services watch their app plus shared build inputs and packages; watch
+patterns always resolve from the repository root, regardless of any Root
+Directory setting.
 
 ## Retention and Security
 
