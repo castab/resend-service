@@ -16,13 +16,10 @@ export interface TestDbClient {
   close(): Promise<void>;
 }
 
-export function createConnectorTests(
-  connectorName: string,
-  createClient: () => TestDbClient,
-) {
-  const endpoint = `${TEST_CONFIG.appBaseUrl}/${connectorName}`;
+export function createWebhookTests(createClient: () => TestDbClient) {
+  const endpoint = `${TEST_CONFIG.appBaseUrl}/api/webhook/resend`;
 
-  describe(`${connectorName} connector`, () => {
+  describe('Resend webhook endpoint', () => {
     let dbClient: TestDbClient;
 
     beforeAll(async () => {
