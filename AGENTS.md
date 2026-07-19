@@ -20,6 +20,28 @@
   explicitly changed.
 - Follow the checked-in Biome configuration for formatting and lint rules.
 
+## API Documentation
+
+- Treat `public/openapi.json` as the machine-readable contract for every live
+  application API endpoint. An endpoint addition or behavioral change is
+  incomplete until its OpenAPI definition is updated in the same change.
+- Document only behavior that is live in the application. Never add planned,
+  proposed, or unavailable endpoints to the OpenAPI document.
+- For each operation, document its method, path, parameters, required headers,
+  authentication or signature requirements, request body, response bodies,
+  status codes, and representative examples.
+- Document operational semantics that affect callers, including idempotency,
+  duplicate handling, ordering, retry behavior, and relevant side effects.
+- Keep schemas and examples aligned with the implementation, TypeScript event
+  types, fixtures, and integration assertions. Do not use the OpenAPI contract
+  to claim validation or rejection behavior that the route does not implement.
+- Keep the public Swagger UI at `/docs` synchronized with
+  `/openapi.json`. Preserve `/openapi.json` in the standalone production image.
+- Run `npm run api:validate` for every API-related change and resolve all errors
+  and warnings before considering the change complete.
+- The root path intentionally returns `404`; `/docs` is the canonical
+  documentation page. Do not restore an empty root page.
+
 ## Webhook Invariants
 
 - The public webhook route is `POST /api/webhooks/v1/resend`.
@@ -35,7 +57,8 @@
   failures are `500` so Resend can retry.
 - When adding or changing supported webhook data, update the event types,
   preparation logic, route mapping, Prisma schema, migration, fixtures, and
-  integration assertions together.
+  integration assertions together, as well as `public/openapi.json` when the
+  public request or response contract changes.
 
 ## Database Rules
 
@@ -64,7 +87,8 @@
 - Do not claim that a container image is published unless a working image
   publishing workflow exists.
 - Do not couple the application to a specific DNS provider or custom domain.
-- The root route is empty and is not a dedicated health endpoint.
+- The root path intentionally returns `404` and is not a dedicated health
+  endpoint. API documentation is served at `/docs`.
 
 ## Environment and Secrets
 
@@ -86,6 +110,8 @@
   `src/generated/prisma`.
 - Update README sections when changing routes, environment variables, stored
   fields, migrations, commands, or deployment behavior.
+- Update `public/openapi.json` in the same change whenever a live endpoint is
+  added, removed, or behaviorally changed.
 
 ## Verification
 
@@ -94,6 +120,7 @@ prefer the full sequence:
 
 ```bash
 npm run db:validate
+npm run api:validate
 npm run lint
 npm run build
 npm run test:postgresql
