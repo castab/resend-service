@@ -12,6 +12,10 @@ export interface TestDbClient {
   connect(): Promise<void>;
   findBySvixId(table: CollectionName, svixId: string): Promise<unknown>;
   countBySvixId(table: CollectionName, svixId: string): Promise<number>;
+  getUuidVersionBySvixId(
+    table: CollectionName,
+    svixId: string,
+  ): Promise<number | null>;
   truncate(table: CollectionName): Promise<void>;
   close(): Promise<void>;
 }
@@ -53,6 +57,9 @@ export function createWebhookTests(createClient: () => TestDbClient) {
 
         const stored = await dbClient.findBySvixId('resend_wh_emails', svixId);
         expect(stored).not.toBeNull();
+        expect(
+          await dbClient.getUuidVersionBySvixId('resend_wh_emails', svixId),
+        ).toBe(7);
       });
 
       it('stores email.delivered event', async () => {
@@ -245,6 +252,9 @@ export function createWebhookTests(createClient: () => TestDbClient) {
           svixId,
         );
         expect(stored).not.toBeNull();
+        expect(
+          await dbClient.getUuidVersionBySvixId('resend_wh_contacts', svixId),
+        ).toBe(7);
       });
 
       it('stores contact.updated event', async () => {
@@ -304,6 +314,9 @@ export function createWebhookTests(createClient: () => TestDbClient) {
 
         const stored = await dbClient.findBySvixId('resend_wh_domains', svixId);
         expect(stored).not.toBeNull();
+        expect(
+          await dbClient.getUuidVersionBySvixId('resend_wh_domains', svixId),
+        ).toBe(7);
       });
 
       it('stores domain.updated event', async () => {

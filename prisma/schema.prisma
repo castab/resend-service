@@ -8,7 +8,7 @@ datasource db {
 }
 
 model EmailWebhookEvent {
-  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   svixId               String   @unique(map: "resend_wh_emails_svix_id_key") @map("svix_id")
   eventType            String   @map("event_type")
   webhookReceivedAt    DateTime @default(now()) @map("webhook_received_at") @db.Timestamptz(6)
@@ -38,7 +38,7 @@ model EmailWebhookEvent {
 }
 
 model ContactWebhookEvent {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   svixId            String   @unique(map: "resend_wh_contacts_svix_id_key") @map("svix_id")
   eventType         String   @map("event_type")
   webhookReceivedAt DateTime @default(now()) @map("webhook_received_at") @db.Timestamptz(6)
@@ -62,7 +62,7 @@ model ContactWebhookEvent {
 }
 
 model DomainWebhookEvent {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   svixId            String   @unique(map: "resend_wh_domains_svix_id_key") @map("svix_id")
   eventType         String   @map("event_type")
   webhookReceivedAt DateTime @default(now()) @map("webhook_received_at") @db.Timestamptz(6)

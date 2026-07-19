@@ -88,6 +88,8 @@ Events are appended to three PostgreSQL tables:
 | `resend_wh_contacts` | Contact identity, audience, segments, names, and subscription state |
 | `resend_wh_domains` | Domain identity, status, region, and DNS records |
 
+Each row uses a database-generated UUIDv7 primary key.
+
 Each table has its own unique constraint on `svix_id`. Re-delivering the same
 event to the same event family is acknowledged with `200` without inserting a
 second row.
@@ -104,6 +106,7 @@ control, backups, and any retention policy required for their environment.
 
 - Node.js 22 or newer
 - npm 10 or newer
+- PostgreSQL 18 or newer, for native UUIDv7 generation
 - Docker and Docker Compose for the included local PostgreSQL service
 
 ## Configuration
@@ -281,7 +284,7 @@ docker run --rm -p 3000:3000 \
 The image is OCI-compatible and can be deployed to container services other
 than Railway. The target platform must provide:
 
-- A reachable PostgreSQL database
+- A reachable PostgreSQL 18 or newer database
 - The two required environment variables
 - A migration step before the new application version starts
 - Public HTTPS routing to the container
