@@ -15,13 +15,8 @@ jobs:
     timeout-minutes: 20
 
     services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-
       postgresql:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_DB: resend_test
           POSTGRES_USER: postgres
@@ -34,58 +29,33 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-      mysql:
-        image: mysql:8
-        env:
-          MYSQL_DATABASE: resend_test
-          MYSQL_ROOT_PASSWORD: mysql
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
-      clickhouse:
-        image: clickhouse/clickhouse-server:24
-        ports:
-          - 8123:8123
-          - 9000:9000
-
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: pnpm
+          cache: npm
 
       - name: Install dependencies
-        run: pnpm install
+        run: npm ci
 
       - name: Setup test databases
-        run: pnpm db:setup --mongodb --postgresql --mysql --clickhouse
+        run: npm run db:setup
         env:
-          MONGODB_URI: mongodb://localhost:27017
-          MONGODB_DATABASE: resend_test
-          POSTGRESQL_URL: postgres://postgres:postgres@localhost:5432/resend_test
-          MYSQL_URL: mysql://root:mysql@localhost:3306/resend_test
-          CLICKHOUSE_URL: http://localhost:8123
-          CLICKHOUSE_DATABASE: resend_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
+
+      - name: Validate
+        run: |
+          npm run db:validate
+          npm run lint
+          npm run build
 
       - name: Start dev server
-        run: pnpm dev &
+        run: npm run dev &
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
-          MONGODB_URI: mongodb://localhost:27017
-          MONGODB_DATABASE: resend_test
-          POSTGRESQL_URL: postgres://postgres:postgres@localhost:5432/resend_test
-          MYSQL_URL: mysql://root:mysql@localhost:3306/resend_test
-          CLICKHOUSE_URL: http://localhost:8123
-          CLICKHOUSE_DATABASE: resend_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
 
       - name: Wait for server
         run: |
@@ -95,13 +65,8 @@ jobs:
           done
 
       - name: Run tests
-        run: pnpm test --exclude tests/integration/supabase.test.ts --exclude tests/integration/neon.test.ts --exclude tests/integration/planetscale.test.ts --exclude tests/integration/bigquery.test.ts --exclude tests/integration/snowflake.test.ts
+        run: npm test
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
           APP_BASE_URL: http://localhost:3000
-          MONGODB_URI: mongodb://localhost:27017
-          MONGODB_DATABASE: resend_test
-          POSTGRESQL_URL: postgres://postgres:postgres@localhost:5432/resend_test
-          MYSQL_URL: mysql://root:mysql@localhost:3306/resend_test
-          CLICKHOUSE_URL: http://localhost:8123
-          CLICKHOUSE_DATABASE: resend_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test

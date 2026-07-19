@@ -1,639 +1,397 @@
-# Resend Webhooks Ingester
+# resend-service
 
-A self-hosted webhook ingester for [Resend](https://resend.com) that stores email, contact, and domain events in your database. Built with Next.js for easy deployment to Vercel or your preferred hosting platform. [Learn more about storing webhooks data](https://resend.com/docs/dashboard/webhooks/how-to-store-webhooks-data)
+`resend-service` receives [Resend](https://resend.com) webhooks, verifies
+their Svix signatures, and stores selected event data in PostgreSQL.
 
-## Deploy
+[Railway](https://railway.com) is the recommended deployment target and is
+configured in this repository. The included Dockerfile builds a portable
+container image that can run on any compatible container platform.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/resend/resend-webhooks-ingester&env=RESEND_WEBHOOK_SECRET&envDescription=Your%20Resend%20webhook%20signing%20secret&envLink=https://resend.com/webhooks)
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/cd2lvJ?referralCode=w2CHHM&utm_medium=integration&utm_source=template&utm_campaign=generic)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/resend/resend-webhooks-ingester)
+This project was originally based on
+[`resend/resend-webhooks-ingester`](https://github.com/resend/resend-webhooks-ingester).
+It has been narrowed to a single PostgreSQL-backed service that can be extended
+with additional application capabilities over time.
 
-Or use [Docker](#docker): `docker pull ghcr.io/resend/resend-webhooks-ingester`
+## Current Scope
 
-## Table of Contents
+- Accepts Resend webhooks at `POST /api/webhook/resend`
+- Verifies the raw request body with the Resend webhook signing secret
+- Stores email, contact, and domain events in PostgreSQL
+- Ignores duplicate deliveries using the unique `svix-id` header
+- Manages the database schema with Prisma migrations
+- Builds as a standalone Next.js application and Docker image
 
-- [Features](#features)
-- [Supported Databases](#supported-databases)
-- [Supported Event Types](#supported-event-types)
-- [Quick Start](#quick-start)
-- [Database Setup](#database-setup)
-- [Running Locally](#running-locally)
-- [Development & Testing](#development--testing)
-- [Deployment](#deployment)
-- [Configuring Resend Webhooks](#configuring-resend-webhooks)
-- [API Reference](#api-reference)
-- [Data Retention](#data-retention)
-- [Troubleshooting](#troubleshooting)
+The service stores normalized fields used by its current schema. It does not
+store the complete original webhook payload.
 
-## Features
+## Architecture
 
-- Receives and verifies Resend webhooks using Svix signatures
-- Stores all webhook events in your database (append-only log)
-- Supports all Resend event types: emails, contacts, and domains
-- Idempotent event storage (duplicate webhooks are safely ignored)
-- Type-safe with full TypeScript support
-- Multiple database connectors available
+```text
+Resend
+  -> HTTPS endpoint
+  -> Next.js webhook route
+  -> Svix signature verification
+  -> Prisma
+  -> PostgreSQL
+```
 
-## Supported Databases
+The application uses:
 
-| Connector | Endpoint | Best For |
-|-----------|----------|----------|
-| [Supabase](#supabase) | `/supabase` | Quick setup with managed Postgres |
-| [PostgreSQL](#postgresql) | `/postgresql` | Self-hosted or managed Postgres (Neon, Railway, Render) |
-| [Neon](#neon) | `/neon` | Serverless environments (Vercel, Netlify, Cloudflare) |
-| [MySQL](#mysql) | `/mysql` | Self-hosted or managed MySQL |
-| [PlanetScale Postgres](#planetscale-postgres) | `/postgresql` | Serverless Postgres |
-| [PlanetScale MySQL](#planetscale-mysql) | `/planetscale` | Serverless MySQL |
-| [MongoDB](#mongodb) | `/mongodb` | Document database (Atlas, self-hosted) |
-| [Snowflake](#snowflake) | `/snowflake` | Data warehousing and analytics |
-| [BigQuery](#bigquery) | `/bigquery` | Google Cloud analytics |
-| [ClickHouse](#clickhouse) | `/clickhouse` | High-performance analytics |
+- Node.js 22
+- Next.js 16 and React 19
+- Prisma 7 with the PostgreSQL driver adapter
+- PostgreSQL 18 for local development and CI
+- Svix for webhook signature verification
 
-## Supported Event Types
+## Supported Events
 
 ### Email Events
+
 | Event | Description |
-|-------|-------------|
-| `email.sent` | Email accepted by Resend, delivery attempted |
-| `email.delivered` | Email successfully delivered to recipient |
-| `email.delivery_delayed` | Temporary delivery issue |
-| `email.bounced` | Email permanently rejected |
-| `email.complained` | Recipient marked email as spam |
-| `email.opened` | Recipient opened the email |
-| `email.clicked` | Recipient clicked a link in the email |
-| `email.failed` | Email failed to send |
-| `email.scheduled` | Email scheduled for future delivery |
-| `email.suppressed` | Email suppressed by Resend |
-| `email.received` | Inbound email received |
+| --- | --- |
+| `email.sent` | Resend accepted the email for delivery |
+| `email.delivered` | The email was delivered |
+| `email.delivery_delayed` | Delivery was temporarily delayed |
+| `email.bounced` | Delivery permanently failed |
+| `email.complained` | The recipient reported the email as spam |
+| `email.opened` | The recipient opened the email |
+| `email.clicked` | The recipient clicked a link |
+| `email.failed` | Resend could not send the email |
+| `email.scheduled` | The email was scheduled for later delivery |
+| `email.suppressed` | Resend suppressed the email |
+| `email.received` | Resend received an inbound email |
 
 ### Contact Events
+
 | Event | Description |
-|-------|-------------|
-| `contact.created` | Contact added to an audience |
-| `contact.updated` | Contact information updated |
-| `contact.deleted` | Contact removed from an audience |
+| --- | --- |
+| `contact.created` | A contact was created |
+| `contact.updated` | A contact was updated |
+| `contact.deleted` | A contact was deleted |
 
 ### Domain Events
+
 | Event | Description |
-|-------|-------------|
-| `domain.created` | Domain added to Resend |
-| `domain.updated` | Domain configuration updated |
-| `domain.deleted` | Domain removed from Resend |
+| --- | --- |
+| `domain.created` | A domain was created |
+| `domain.updated` | A domain was updated |
+| `domain.deleted` | A domain was deleted |
 
-## Quick Start
+## Data Storage
 
-### 1. Clone the repository
+Events are appended to three PostgreSQL tables:
+
+| Table | Contents |
+| --- | --- |
+| `resend_wh_emails` | Delivery lifecycle, sender, recipients, subject, tags, bounce data, and click data |
+| `resend_wh_contacts` | Contact identity, audience, segments, names, and subscription state |
+| `resend_wh_domains` | Domain identity, status, region, and DNS records |
+
+Each table has its own unique constraint on `svix_id`. Re-delivering the same
+event to the same event family is acknowledged with `200` without inserting a
+second row.
+
+### Retention
+
+Stored events are retained indefinitely. The application does not currently
+delete, truncate, archive, or expire webhook records. The stored fields can
+include personal or sensitive data such as email addresses, names, subjects,
+IP addresses, and user-agent strings. Operators are responsible for access
+control, backups, and any retention policy required for their environment.
+
+## Requirements
+
+- Node.js 22 or newer
+- npm 10 or newer
+- Docker and Docker Compose for the included local PostgreSQL service
+
+## Configuration
+
+Create a `.env` file in the repository root:
+
+```env
+RESEND_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxx
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
+```
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `RESEND_WEBHOOK_SECRET` | Yes | Signing secret for the webhook endpoint configured in Resend |
+| `DATABASE_URL` | Yes | PostgreSQL connection URL used by the application and Prisma migrations |
+
+A Resend API key is not required because this service receives webhooks and
+does not call the Resend API.
+
+Use `.env` for local Prisma commands. `prisma.config.ts` loads this file with
+`dotenv`; a value stored only in `.env.local` will not be available to the
+Prisma CLI.
+
+## Local Development
+
+Install dependencies:
 
 ```bash
-git clone https://github.com/resend/resend-webhooks-ingester.git
-cd resend-webhooks-ingester
+npm ci
 ```
 
-### 2. Install dependencies
-
-```bash
-pnpm install
-```
-
-### 3. Set up environment variables
-
-```bash
-cp .env.example .env.local
-```
-
-Edit `.env.local` with your Resend webhook secret and database credentials (see [Database Setup](#database-setup)).
-
-### 4. Create database tables
-
-Run the appropriate schema file for your database from the `schemas/` directory.
-
-### 5. Deploy and configure webhook
-
-Deploy to Vercel (or your preferred platform) and configure your webhook endpoint in the [Resend Dashboard](https://resend.com/webhooks).
-
-## Database Setup
-
-### Supabase
-
-**Environment Variables:**
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
-**Schema:** Run `schemas/supabase.sql` in the Supabase SQL Editor.
-
-**Endpoint:** `POST /supabase`
-
----
-
-### PostgreSQL
-
-Works with any PostgreSQL database: self-hosted, Neon, Railway, Render, etc.
-
-**Environment Variables:**
-```env
-POSTGRESQL_URL=postgresql://user:password@host:5432/database
-```
-
-**Schema:** Run `schemas/postgresql.sql` in your database.
-
-**Endpoint:** `POST /postgresql`
-
----
-
-### Neon
-
-Recommended for serverless environments (Vercel, Netlify, Cloudflare). For long-running servers, use the PostgreSQL connector instead.
-
-**Environment Variables:**
-```env
-NEON_DATABASE_URL=postgresql://user:password@ep-xyz.us-east-1.aws.neon.tech/database?sslmode=require
-```
-
-**Schema:** Run `schemas/postgresql.sql` in your Neon database.
-
-**Endpoint:** `POST /neon`
-
----
-
-### MySQL
-
-**Environment Variables:**
-```env
-MYSQL_URL=mysql://user:password@host:3306/database
-```
-
-**Schema:** Run `schemas/mysql.sql` in your database.
-
-**Endpoint:** `POST /mysql`
-
----
-
-### PlanetScale Postgres
-
-**Environment Variables:**
-```env
-POSTGRESQL_URL=postgresql://username:password@host:5432/postgres?sslmode=verify-full
-```
-
-Get your connection string from the PlanetScale dashboard under **Connect > Create role**.
-
-**Schema:** Run `schemas/postgresql.sql` in your PlanetScale database.
-
-**Endpoint:** `POST /postgresql`
-
----
-
-### PlanetScale MySQL
-
-**Environment Variables:**
-```env
-PLANETSCALE_URL=mysql://username:password@host/database?ssl={"rejectUnauthorized":true}
-```
-
-Get your connection string from the PlanetScale dashboard under **Connect > Create password**.
-
-**Schema:** Run `schemas/mysql.sql` in your PlanetScale database.
-
-**Endpoint:** `POST /planetscale`
-
----
-
-### MongoDB
-
-Works with MongoDB Atlas, self-hosted MongoDB, or any MongoDB-compatible database.
-
-**Environment Variables:**
-```env
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
-MONGODB_DATABASE=resend_webhooks
-```
-
-Get your connection string from your MongoDB Atlas dashboard or construct it for your self-hosted instance.
-
-**Schema:** Run `schemas/mongodb.js` using mongosh:
-```bash
-mongosh "your-connection-string" schemas/mongodb.js
-```
-
-Or execute the commands manually in MongoDB Compass or Atlas.
-
-**Endpoint:** `POST /mongodb`
-
----
-
-### Snowflake
-
-**Environment Variables:**
-```env
-SNOWFLAKE_ACCOUNT=your-account-identifier
-SNOWFLAKE_USERNAME=your-username
-SNOWFLAKE_PASSWORD=your-password
-SNOWFLAKE_DATABASE=your-database
-SNOWFLAKE_SCHEMA=your-schema
-SNOWFLAKE_WAREHOUSE=your-warehouse
-```
-
-**Schema:** Run `schemas/snowflake.sql` in a Snowflake worksheet.
-
-**Endpoint:** `POST /snowflake`
-
----
-
-### BigQuery
-
-**Environment Variables:**
-```env
-BIGQUERY_PROJECT_ID=your-project-id
-BIGQUERY_DATASET_ID=your-dataset-id
-# Optional: Service account credentials as JSON string
-BIGQUERY_CREDENTIALS={"type":"service_account","project_id":"..."}
-```
-
-If running on Google Cloud (Cloud Run, GKE), you can omit `BIGQUERY_CREDENTIALS` and use default application credentials.
-
-**Schema:** Run `schemas/bigquery.sql` in the BigQuery console (replace `YOUR_DATASET` with your dataset ID).
-
-**Endpoint:** `POST /bigquery`
-
----
-
-### ClickHouse
-
-**Environment Variables:**
-```env
-CLICKHOUSE_URL=https://your-instance.clickhouse.cloud:8443
-CLICKHOUSE_USERNAME=default
-CLICKHOUSE_PASSWORD=your-password
-CLICKHOUSE_DATABASE=default
-```
-
-**Schema:** Run `schemas/clickhouse.sql` in your ClickHouse client.
-
-**Endpoint:** `POST /clickhouse`
-
----
-
-## Running Locally
-
-Start the development server:
-
-```bash
-pnpm dev
-```
-
-The webhook endpoints will be available at `http://localhost:3000/{connector}`.
-
-For local testing, expose your server using [ngrok](https://ngrok.com):
-
-```bash
-ngrok http 3000
-```
-
-Use the ngrok URL (e.g., `https://abc123.ngrok.io/supabase`) as your webhook endpoint in Resend.
-
-## Development & Testing
-
-### Running Tests Locally
-
-The project includes integration tests for MongoDB, PostgreSQL, MySQL, and ClickHouse that run with Docker.
-
-**Cloud-only connectors** (require real accounts, not run in CI):
-- **Supabase** - Requires real Supabase project credentials
-- **Neon** - Requires a Neon database and connection string
-- **PlanetScale** - Requires real PlanetScale account (uses same schema as MySQL)
-- **Snowflake** - Requires real Snowflake account
-- **BigQuery** - Requires real GCP project
-
-**1. Start databases with Docker Compose:**
+Start PostgreSQL:
 
 ```bash
 docker compose up -d
 ```
 
-**2. Apply schemas to test databases:**
+Generate the Prisma client and apply existing migrations:
 
 ```bash
-pnpm db:setup
+npm run db:setup
 ```
 
-**3. Start the dev server with test environment:**
+Start the development server:
 
 ```bash
-pnpm dev:test
+npm run dev
 ```
 
-**4. Run tests (in another terminal):**
+The webhook endpoint is available at:
 
-```bash
-pnpm test
+```text
+http://localhost:3000/api/webhook/resend
 ```
 
-Or run tests for a specific connector:
+Resend needs a publicly accessible HTTPS endpoint. To receive real webhook
+events during local development, expose the local server with a trusted tunnel
+and register this path on the tunnel's public URL.
 
-```bash
-pnpm test:mongodb
-pnpm test:supabase
-pnpm test:postgresql
-pnpm test:neon
-pnpm test:mysql
-pnpm test:clickhouse
-```
+## Webhook API
 
-### Test Environment
+### `POST /api/webhook/resend`
 
-Tests use `.env.test` for configuration. The `dev:test` script loads this file automatically via dotenv-cli.
+The route reads the raw request body, verifies its signature, classifies the
+event, and writes it to the corresponding table.
 
-### Testing Cloud Connectors (Supabase, PlanetScale, etc.)
+Required request headers:
 
-To test cloud connectors like Supabase:
+| Header | Purpose |
+| --- | --- |
+| `svix-id` | Unique webhook message identifier used for idempotency |
+| `svix-timestamp` | Timestamp included in signature verification |
+| `svix-signature` | Svix signature for the raw request body |
 
-1. Add your credentials to `.env.test`:
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-SUPABASE_DB_URL=postgresql://postgres:password@db.your-project.supabase.co:5432/postgres
-```
+Responses:
 
-2. Run the schema setup (from Supabase SQL Editor or via CLI):
-```bash
-pnpm db:setup --supabase
-```
+| Status | Body | Meaning |
+| --- | --- | --- |
+| `200` | `{"received":true}` | The event was stored or had already been stored |
+| `400` | Error response | Required headers are missing or the event type is unsupported |
+| `401` | Error response | Signature verification failed |
+| `500` | Error response | Configuration or database processing failed |
 
-3. Run the tests:
-```bash
-pnpm test:supabase
-```
+Resend provides at-least-once delivery and does not guarantee event ordering.
+Use event timestamps when chronological processing matters. Non-`200`
+responses can cause Resend to retry a delivery.
+
+## Configure Resend
+
+1. Deploy the service to a publicly accessible HTTPS URL.
+2. Open the [Webhooks page](https://resend.com/webhooks) in Resend.
+3. Add `https://webhooks.example.com/api/webhook/resend` as the endpoint.
+4. Select the email, contact, and domain events the service should receive.
+5. Copy the webhook signing secret into `RESEND_WEBHOOK_SECRET` on the host.
+6. Redeploy or restart the service after setting the secret.
+
+The secret belongs to the configured webhook endpoint. Do not commit it to the
+repository or expose it to client-side code.
 
 ## Deployment
 
-### Docker
+### Railway (Recommended)
 
-Pull the image from GitHub Container Registry:
+The checked-in `railway.json` uses the Dockerfile builder and runs
+`npm run db:migrate:deploy` before each deployment.
+
+1. Create a Railway project.
+2. Add a PostgreSQL service to the project.
+3. Add this repository as an application service.
+4. Set `DATABASE_URL` to a reference to the PostgreSQL service's connection
+   URL.
+5. Set `RESEND_WEBHOOK_SECRET` to the signing secret from Resend.
+6. Deploy the application service.
+7. Generate a Railway domain or attach a custom domain.
+8. Configure `https://webhooks.example.com/api/webhook/resend` in Resend.
+
+Railway builds the image from `Dockerfile`, applies migrations through the
+pre-deploy command, and starts the standalone Next.js server. The container
+listens on port `3000` by default and accepts a platform-provided `PORT`
+override.
+
+### Docker and Other Platforms
+
+Build the image from the repository:
 
 ```bash
-docker pull ghcr.io/resend/resend-webhooks-ingester:latest
+docker build -t resend-service .
 ```
 
-Run with environment variables:
+Apply the checked-in migrations before starting a new application version:
 
 ```bash
-docker run -p 3000:3000 \
-  -e RESEND_WEBHOOK_SECRET=whsec_your_secret \
-  -e MONGODB_URI=mongodb://host:27017 \
-  -e MONGODB_DATABASE=resend_webhooks \
-  ghcr.io/resend/resend-webhooks-ingester:latest
+docker run --rm \
+  -e DATABASE_URL="$DATABASE_URL" \
+  resend-service npm run db:migrate:deploy
 ```
 
-Or build locally:
+Run the application:
 
 ```bash
-docker build -t resend-webhooks-ingester .
-docker run -p 3000:3000 -e ... resend-webhooks-ingester
+docker run --rm -p 3000:3000 \
+  -e DATABASE_URL="$DATABASE_URL" \
+  -e RESEND_WEBHOOK_SECRET="$RESEND_WEBHOOK_SECRET" \
+  resend-service
 ```
 
-### Vercel
+The image is OCI-compatible and can be deployed to container services other
+than Railway. The target platform must provide:
 
-Use the [deploy button](#deploy) above, or:
+- A reachable PostgreSQL database
+- The two required environment variables
+- A migration step before the new application version starts
+- Public HTTPS routing to the container
+- Appropriate restart, health-check, scaling, backup, and secret-management
+  policies
 
-1. Push your code to GitHub
-2. Import the repository in [Vercel](https://vercel.com)
-3. Add environment variables:
-   - `RESEND_WEBHOOK_SECRET` (required)
-   - Database-specific variables for your chosen connector
-4. Deploy
+This repository does not currently publish a prebuilt image. Build the image
+from the checked-in Dockerfile or configure the target platform to do so.
 
-Your webhook endpoint: `https://your-project.vercel.app/{connector}`
+## Development Commands
 
-### Other Platforms
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Next.js development server |
+| `npm run dev:test` | Start Next.js with variables from `.env.test` |
+| `npm run build` | Generate Prisma Client and create a production build |
+| `npm start` | Start an existing Next.js production build |
+| `npm run lint` | Check formatting and lint rules with Biome |
+| `npm run lint:fix` | Apply Biome formatting and safe fixes |
+| `npm test` | Run the Vitest suite once |
+| `npm run test:postgresql` | Run the PostgreSQL integration suite |
+| `npm run test:watch` | Run Vitest in watch mode |
+| `npm run db:generate` | Regenerate Prisma Client |
+| `npm run db:migrate:deploy` | Apply pending migrations without creating new ones |
+| `npm run db:setup` | Generate Prisma Client and apply pending migrations |
+| `npm run db:studio` | Open Prisma Studio using `.env.test` |
+| `npm run db:validate` | Validate the Prisma schema and configuration |
 
-This is a standard Next.js application:
+## Testing
 
-- **Netlify**: Use the Next.js runtime
-- **Railway**: Deploy directly from GitHub or use the deploy button above
-- **Render**: Use the deploy button above or connect your repo
-- **Fly.io**: Use the Dockerfile
-- **Google Cloud Run**: Build and deploy container
-- **Self-hosted**: Use Docker or `pnpm build && pnpm start`
+The integration suite sends signed webhook fixtures to a running application
+and verifies the resulting PostgreSQL rows.
 
-## Configuring Resend Webhooks
+Create an ignored `.env.test` file:
 
-1. Go to your [Resend Dashboard](https://resend.com/webhooks)
-2. Click **Add Webhook**
-3. Enter your webhook endpoint URL (e.g., `https://your-domain.com/supabase`)
-4. Select the events you want to receive
-5. Click **Create**
-6. Copy the **Signing Secret** and add it as `RESEND_WEBHOOK_SECRET`
+```env
+RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
+APP_BASE_URL=http://localhost:3000
+```
+
+Prepare the database and start the test server:
+
+```bash
+docker compose up -d
+npx dotenv -e .env.test -- npm run db:setup
+npm run dev:test
+```
+
+In another terminal, run:
+
+```bash
+npm run test:postgresql
+```
+
+The test suite covers all declared event types, duplicate deliveries, invalid
+signatures, and missing Svix headers. CI also runs schema validation, linting,
+and the production build.
+
+## Database Changes
+
+`prisma/schema.prisma` and the files in `prisma/migrations` are the database
+sources of truth. After changing the schema, create a new migration and
+regenerate Prisma Client:
+
+```bash
+npx prisma migrate dev --name describe_the_change
+npm run db:generate
+```
+
+Do not manually edit `src/generated/prisma`. It is generated locally and is
+excluded from version control.
 
 ## Project Structure
 
-```
-src/
-├── app/
-│   ├── page.tsx              # Empty root page
-│   ├── supabase/route.ts     # Supabase connector
-│   ├── postgresql/route.ts   # PostgreSQL connector
-│   ├── neon/route.ts         # Neon serverless connector
-│   ├── mysql/route.ts        # MySQL connector
-│   ├── planetscale/route.ts  # PlanetScale connector
-│   ├── mongodb/route.ts      # MongoDB connector
-│   ├── snowflake/route.ts    # Snowflake connector
-│   ├── bigquery/route.ts     # BigQuery connector
-│   └── clickhouse/route.ts   # ClickHouse connector
-├── lib/
-│   ├── verify-webhook.ts     # Svix signature verification
-│   └── webhook-handler.ts    # Shared webhook handling logic
-├── types/
-│   └── webhook.ts            # TypeScript types for webhook payloads
-└── env.d.ts                  # Environment variable types
-
-schemas/
-├── supabase.sql              # Supabase/PostgreSQL schema
-├── postgresql.sql            # PostgreSQL schema
-├── mysql.sql                 # MySQL/PlanetScale schema
-├── mongodb.js                # MongoDB schema and indexes
-├── snowflake.sql             # Snowflake schema
-├── bigquery.sql              # BigQuery schema
-└── clickhouse.sql            # ClickHouse schema
-
-tests/
-├── setup.ts                  # Test configuration
-├── helpers/
-│   ├── svix.ts               # Webhook signature generation
-│   ├── fixtures.ts           # Sample event payloads
-│   ├── db-clients.ts         # DB clients for assertions
-│   └── test-factory.ts       # Shared test cases
-└── integration/
-    ├── mongodb.test.ts
-    ├── supabase.test.ts
-    ├── postgresql.test.ts
-    ├── mysql.test.ts
-    └── clickhouse.test.ts
+```text
+.
+|-- prisma/
+|   |-- migrations/                 # Versioned PostgreSQL migrations
+|   `-- schema.prisma               # Prisma data model
+|-- src/
+|   |-- app/api/webhook/resend/     # Resend webhook route
+|   |-- lib/                        # Prisma and webhook handling
+|   `-- types/                      # Resend webhook types
+|-- tests/
+|   |-- helpers/                    # Fixtures, signing, and DB assertions
+|   `-- integration/                # PostgreSQL integration tests
+|-- Dockerfile                      # Portable production image
+|-- docker-compose.yml              # Local PostgreSQL service
+|-- prisma.config.ts                # Prisma CLI configuration
+`-- railway.json                    # Recommended Railway deployment settings
 ```
 
-## API Reference
+## Operational Notes
 
-All connectors share the same API:
-
-### `POST /{connector}`
-
-Receives and stores Resend webhook events.
-
-**Required Headers:**
-- `svix-id`: Webhook message ID
-- `svix-timestamp`: Unix timestamp
-- `svix-signature`: HMAC signature
-
-**Responses:**
-| Status | Description |
-|--------|-------------|
-| `200` | Webhook processed successfully |
-| `400` | Missing headers or unknown event type |
-| `401` | Invalid webhook signature |
-| `500` | Server error (triggers Resend retry) |
-
-## Security Considerations
-
-- **Always verify webhook signatures** - The ingester rejects requests with invalid signatures
-- **Use environment variables** - Never commit secrets to your repository
-- **Use service role keys carefully** - Keys that bypass RLS should only be used server-side
-- **HTTPS only** - Always use HTTPS in production
-
-## Data Retention
-
-By default, webhook events are stored **indefinitely**. This gives you complete historical data for analytics and auditing.
-
-If you need to limit data retention, you can set up scheduled jobs to delete old events. Below are example queries to delete events older than a specified number of days.
-
-### PostgreSQL / Supabase
-
-```sql
--- Delete email events older than 90 days
-DELETE FROM resend_wh_emails
-WHERE event_created_at < NOW() - INTERVAL '90 days';
-
--- Delete contact events older than 90 days
-DELETE FROM resend_wh_contacts
-WHERE event_created_at < NOW() - INTERVAL '90 days';
-
--- Delete domain events older than 90 days
-DELETE FROM resend_wh_domains
-WHERE event_created_at < NOW() - INTERVAL '90 days';
-```
-
-For Supabase, you can use [pg_cron](https://supabase.com/docs/guides/database/extensions/pg_cron) to schedule these queries.
-
-### MySQL / PlanetScale
-
-```sql
--- Delete email events older than 90 days
-DELETE FROM resend_wh_emails
-WHERE event_created_at < DATE_SUB(NOW(), INTERVAL 90 DAY);
-
--- Delete contact events older than 90 days
-DELETE FROM resend_wh_contacts
-WHERE event_created_at < DATE_SUB(NOW(), INTERVAL 90 DAY);
-
--- Delete domain events older than 90 days
-DELETE FROM resend_wh_domains
-WHERE event_created_at < DATE_SUB(NOW(), INTERVAL 90 DAY);
-```
-
-### BigQuery
-
-```sql
--- Delete email events older than 90 days
-DELETE FROM `your_project.your_dataset.resend_wh_emails`
-WHERE event_created_at < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY);
-```
-
-You can also set up [partition expiration](https://cloud.google.com/bigquery/docs/managing-partitioned-tables#partition-expiration) on your tables.
-
-### Snowflake
-
-```sql
--- Delete email events older than 90 days
-DELETE FROM resend_wh_emails
-WHERE event_created_at < DATEADD(day, -90, CURRENT_TIMESTAMP());
-```
-
-You can use [Snowflake Tasks](https://docs.snowflake.com/en/user-guide/tasks-intro) to schedule cleanup.
-
-### ClickHouse
-
-```sql
--- Delete email events older than 90 days
-ALTER TABLE resend_wh_emails DELETE
-WHERE event_created_at < now() - INTERVAL 90 DAY;
-```
-
-Alternatively, use [TTL expressions](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) in your table definition for automatic cleanup.
-
-### MongoDB
-
-```javascript
-// Delete email events older than 90 days
-db.resend_wh_emails.deleteMany({
-  event_created_at: { $lt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
-});
-
-// Delete contact events older than 90 days
-db.resend_wh_contacts.deleteMany({
-  event_created_at: { $lt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
-});
-
-// Delete domain events older than 90 days
-db.resend_wh_domains.deleteMany({
-  event_created_at: { $lt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
-});
-```
-
-You can also use [MongoDB Atlas scheduled triggers](https://www.mongodb.com/docs/atlas/app-services/triggers/scheduled-triggers/) or create a TTL index for automatic expiration.
-
-## Example Queries
-
-See [`queries_examples.md`](./queries_examples.md) for useful analytics queries including:
-- Email status counts by day
-- Bounce rates
-- Open rates
-- Click-through rates
-- Contact growth tracking
-- Most clicked links
+- Preserve the raw request body until Svix verification is complete.
+- Treat `RESEND_WEBHOOK_SECRET` and `DATABASE_URL` as secrets.
+- Restrict direct database access because stored records can contain personal
+  data.
+- Monitor `500` responses and database errors; repeated failures prevent event
+  persistence and trigger webhook retries.
+- The root route is empty and is not a dedicated readiness or liveness check.
+- The service has no read API, administrative API, retention job, or event
+  replay worker.
 
 ## Troubleshooting
 
-### Webhooks not being received
-- Verify your endpoint URL is correct in Resend
-- Check that your server is publicly accessible
-- Ensure `RESEND_WEBHOOK_SECRET` matches the signing secret in Resend
+### Webhooks are not received
 
-### Signature verification failing
-- Make sure you're using the raw request body for verification
-- Check that `RESEND_WEBHOOK_SECRET` is set correctly
-- Verify the webhook secret hasn't been rotated in Resend
+- Confirm the configured URL ends with `/api/webhook/resend`.
+- Confirm the service is publicly accessible over HTTPS.
+- Check the webhook delivery and retry history in Resend.
 
-### Database insertion errors
-- Verify your database credentials are correct
-- Check that the schema has been applied
-- Review server logs for specific error messages
+### Signature verification fails
 
-### Snowflake connection issues
-- Verify your account identifier format (e.g., `xy12345.us-east-1`)
-- Ensure the warehouse is running and accessible
-- Check that the user has INSERT permissions on the tables
+- Confirm `RESEND_WEBHOOK_SECRET` belongs to the configured endpoint.
+- Redeploy or restart after changing the secret.
+- Ensure proxies preserve the request body unchanged.
 
-### BigQuery errors
-- Verify the service account has BigQuery Data Editor role
-- Ensure the dataset and tables exist
-- Check that the project ID is correct
+### Database insertion fails
+
+- Confirm `DATABASE_URL` is available to both migrations and the application.
+- Run `npm run db:migrate:deploy` against the target database.
+- Confirm the application can reach PostgreSQL from its runtime network.
+- Review application logs for the database error.
+
+### Prisma reports `P3005`
+
+A non-empty database created before Prisma migration tracking must be
+[baselined](https://www.prisma.io/docs/orm/prisma-migrate/workflows/baselining)
+before `prisma migrate deploy` can manage it. Confirm that its existing schema
+matches the initial migration before marking that migration as applied. Do not
+reset a production database to resolve this error.
 
 ## Resources
 
-- [Resend Webhooks Documentation](https://resend.com/docs/webhooks/introduction)
-- [Resend Event Types](https://resend.com/docs/webhooks/event-types)
-- [Verifying Webhook Signatures](https://resend.com/docs/webhooks/verify-webhooks-requests)
-
-## License
-
-MIT
+- [Resend webhooks](https://resend.com/docs/webhooks/introduction)
+- [Resend event types](https://resend.com/docs/webhooks/event-types)
+- [Verify webhook requests](https://resend.com/docs/webhooks/verify-webhooks-requests)
+- [Webhook retries and replays](https://resend.com/docs/webhooks/retries-and-replays)
+- [Railway Dockerfiles](https://docs.railway.com/guides/dockerfiles)
+- [Prisma migrations](https://www.prisma.io/docs/orm/prisma-migrate)
