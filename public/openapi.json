@@ -259,7 +259,7 @@
       "post": {
         "operationId": "createConversation",
         "summary": "Start a topic conversation",
-        "description": "Creates the single conversation for an external topic and sends its opening email. The Idempotency-Key is retained indefinitely by this service and forwarded to Resend using a namespaced value. Repeating the same key and body returns the existing message; reusing the key with another body returns 409.",
+        "description": "Creates the single conversation for an external topic and sends its opening email. The Idempotency-Key is retained indefinitely by this service and forwarded to Resend using a namespaced value. Repeating the same key and normalized request returns the existing message; reusing the key with a different normalized request returns 409. Subject values are normalized by stripping leading Re:/Fw:/Fwd: prefixes case-insensitively.",
         "tags": ["Conversations"],
         "parameters": [
           {
@@ -403,7 +403,7 @@
                         },
                         "before": {
                           "type": ["string", "null"],
-                          "format": "uuid"
+                          "description": "Opaque base64url cursor for the next unassigned-conversation page."
                         }
                       }
                     }
@@ -428,7 +428,7 @@
       "post": {
         "operationId": "enqueueConversation",
         "summary": "Queue a topic conversation",
-        "description": "Atomically creates the conversation, pending opening message, and outbox entry without sending to Resend. The request body matches the synchronous conversation-start operation.",
+        "description": "Atomically creates the conversation, pending opening message, and outbox entry without sending to Resend. The request body matches the synchronous conversation-start operation. A topic whose conversation messages have all failed may be reopened with a new idempotency key.",
         "tags": ["Outbox"],
         "parameters": [
           {
@@ -916,7 +916,7 @@
         "name": "Idempotency-Key",
         "in": "header",
         "required": true,
-        "description": "Caller-generated key unique to one logical send request.",
+        "description": "Caller-generated key unique to one logical send request. Idempotency compares normalized validated fields; unknown body properties are ignored and do not produce a conflict. Keys are globally unique across synchronous and outbox delivery modes.",
         "schema": {
           "type": "string",
           "minLength": 1,
@@ -990,16 +990,32 @@
           }
         }
       },
+      "ParticipantResponse": {
+        "type": "object",
+        "required": ["address", "name"],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "name": {
+            "type": ["string", "null"]
+          }
+        }
+      },
       "MessageContent": {
         "type": "object",
         "properties": {
           "text": {
             "type": "string",
-            "maxLength": 1048576
+            "minLength": 1,
+            "maxLength": 1048576,
+            "description": "Plain text body. Must be a nonempty string when present."
           },
           "html": {
             "type": "string",
-            "maxLength": 1048576
+            "minLength": 1,
+            "maxLength": 1048576,
+            "description": "HTML body. Must be a nonempty string when present."
           }
         },
         "anyOf": [
@@ -1023,7 +1039,7 @@
           },
           "subject": {
             "type": "string",
-            "description": "Defaults to the topic title. Header-safe text: no ASCII control characters.",
+            "description": "Defaults to the topic title after trimming and stripping leading Re:/Fw:/Fwd: prefixes. Header-safe text: no ASCII control characters.",
             "maxLength": 255
           },
           "message": {
@@ -1131,11 +1147,18 @@
         "type": "object",
         "required": [
           "id",
+          "parentMessageId",
           "direction",
           "state",
+          "stateDetail",
+          "resendEmailId",
+          "internetMessageId",
           "from",
           "to",
+          "replyTo",
           "subject",
+          "text",
+          "html",
           "createdAt"
         ],
         "properties": {
@@ -1162,7 +1185,8 @@
             ]
           },
           "stateDetail": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "Human-readable provider or runtime detail. Not stable for machine parsing."
           },
           "resendEmailId": {
             "type": ["string", "null"]
@@ -1243,7 +1267,7 @@
             "type": "string"
           },
           "participant": {
-            "$ref": "#/components/schemas/Participant"
+            "$ref": "#/components/schemas/ParticipantResponse"
           },
           "lastMessageAt": {
             "type": "string",
@@ -1290,7 +1314,7 @@
             "type": "string"
           },
           "participant": {
-            "$ref": "#/components/schemas/Participant"
+            "$ref": "#/components/schemas/ParticipantResponse"
           },
           "lastMessageAt": {
             "type": "string",
@@ -1673,7 +1697,7 @@
         }
       },
       "Unauthorized": {
-        "description": "The bearer credential is missing or invalid.",
+        "description": "The bearer credential is missing or invalid. Conversation endpoints include `WWW-Authenticate: Bearer`.",
         "content": {
           "application/json": {
             "schema": {
