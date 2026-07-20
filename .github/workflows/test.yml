@@ -52,10 +52,9 @@ jobs:
           npm run lint
           npm run build
 
-      - name: Start applications
+      - name: Start application
         run: |
-          npm run dev:webhook > webhook.log 2>&1 &
-          npm run dev:conversation > conversation.log 2>&1 &
+          npm run dev > app.log 2>&1 &
         env:
           RESEND_WEBHOOK_SECRET: whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
           RESEND_API_KEY: test-resend-api-key
@@ -65,18 +64,13 @@ jobs:
           OUTBOX_DRAIN_API_KEY: test-outbox-drain-api-key
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
 
-      - name: Wait for applications
+      - name: Wait for application
         run: |
           for i in {1..30}; do
             curl --fail --silent http://localhost:3000/api/health/v1 && break
             sleep 1
           done
-          curl --fail --silent http://localhost:3000/api/health/v1 > /dev/null || (cat webhook.log && exit 1)
-          for i in {1..30}; do
-            curl --fail --silent http://localhost:3001/api/health/v1 && break
-            sleep 1
-          done
-          curl --fail --silent http://localhost:3001/api/health/v1 > /dev/null || (cat conversation.log && exit 1)
+          curl --fail --silent http://localhost:3000/api/health/v1 > /dev/null || (cat app.log && exit 1)
 
       - name: Run tests
         run: npm run test:postgresql
@@ -88,42 +82,31 @@ jobs:
           CONVERSATION_API_KEY: test-conversation-api-key
           OUTBOX_DRAIN_API_KEY: test-outbox-drain-api-key
           APP_BASE_URL: http://localhost:3000
-          CONVERSATION_BASE_URL: http://localhost:3001
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
 
-      - name: Build production images
-        run: |
-          docker build -f Dockerfile.webhook -t resend-webhook:test .
-          docker build -f Dockerfile.conversation-api -t resend-conversation-api:test .
+      - name: Build production image
+        run: docker build -t resend-service:test .
 
-      - name: Smoke test production images
+      - name: Smoke test production image
         run: |
           docker run --rm --network host \
             -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
-            resend-webhook:test npm run db:migrate:deploy
-          docker run -d --name webhook-smoke --network host \
+            resend-service:test npm run db:migrate:deploy
+          docker run -d --name resend-service-smoke --network host \
             -e PORT=3100 \
             -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
             -e RESEND_API_KEY=test-resend-api-key \
             -e RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ= \
-            resend-webhook:test
-          docker run -d --name conversation-smoke --network host \
-            -e PORT=3101 \
-            -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
-            -e RESEND_API_KEY=test-resend-api-key \
-             -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
-             -e CONVERSATION_API_KEY=test-conversation-api-key \
-             -e OUTBOX_DRAIN_API_KEY=test-outbox-drain-api-key \
-             resend-conversation-api:test
+            -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
+            -e CONVERSATION_API_KEY=test-conversation-api-key \
+            -e OUTBOX_DRAIN_API_KEY=test-outbox-drain-api-key \
+            resend-service:test
           for i in {1..30}; do
             curl --fail --silent http://localhost:3100/api/health/v1 && break
             sleep 1
           done
-          curl --fail --silent http://localhost:3100/api/health/v1 > /dev/null || (docker logs webhook-smoke && exit 1)
-          for i in {1..30}; do
-            curl --fail --silent http://localhost:3101/api/health/v1 && break
-            sleep 1
-          done
-          curl --fail --silent http://localhost:3101/api/health/v1 > /dev/null || (docker logs conversation-smoke && exit 1)
-          docker rm -f webhook-smoke conversation-smoke
+          curl --fail --silent http://localhost:3100/api/health/v1 > /dev/null || (docker logs resend-service-smoke && exit 1)
+          curl --fail --silent http://localhost:3100/openapi.json > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:3100/api/conversations/v1?assignment=unassigned)" = "401"
+          docker rm -f resend-service-smoke
