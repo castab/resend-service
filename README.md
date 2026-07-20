@@ -217,6 +217,7 @@ Create an ignored `.env.test`:
 
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
 RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=
 RESEND_API_KEY=test-resend-api-key
 RESEND_API_BASE_URL=http://localhost:4010
@@ -226,6 +227,11 @@ OUTBOX_DRAIN_API_KEY=test-outbox-drain-api-key
 APP_BASE_URL=http://localhost:3000
 CONVERSATION_BASE_URL=http://localhost:3001
 ```
+
+`DATABASE_URL` configures the applications and Prisma CLI. The integration
+tests require `TEST_DATABASE_URL` for direct database access and cleanup. Set
+both to the same disposable test database; the suite truncates its tables
+before each test and never falls back to `DATABASE_URL`.
 
 Prepare the database, then start each test application in its own terminal. Run
 the PostgreSQL suite from a third terminal. The tests start a bounded local fake
