@@ -3,6 +3,14 @@ import { config } from 'dotenv';
 
 config({ path: path.resolve(__dirname, '../.env.test') });
 
+const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+
+if (!testDatabaseUrl) {
+  throw new Error(
+    'Missing TEST_DATABASE_URL environment variable for destructive PostgreSQL integration tests',
+  );
+}
+
 export const TEST_CONFIG = {
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
   conversationBaseUrl:
@@ -16,8 +24,6 @@ export const TEST_CONFIG = {
     process.env.RESEND_WEBHOOK_SECRET ||
     'whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=',
   postgresql: {
-    url:
-      process.env.DATABASE_URL ||
-      'postgres://postgres:postgres@localhost:5432/resend_test',
+    url: testDatabaseUrl,
   },
 };
