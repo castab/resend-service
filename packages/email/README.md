@@ -6,7 +6,7 @@ webhook and conversation applications.
 ## Responsibilities
 
 - Resend webhook event types
-- Bounded Resend send and retrieve calls
+- Bounded Resend single, batch, and retrieve calls
 - RFC Message-ID extraction
 - Subject normalization
 - In-Reply-To and References construction
@@ -46,3 +46,8 @@ every message in a conversation as ancestry.
 The client uses native `fetch` and aborts each request after 15 seconds. Its
 base URL defaults to `https://api.resend.com`; tests override it with a local
 fake server. Attachments are never requested.
+
+Batch sends contain at most 100 messages. A successful response contains one
+Resend email ID per request item in the same order. Provider idempotency applies
+to the complete batch payload, so callers must preserve ordered membership when
+retrying an ambiguous request.

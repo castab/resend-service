@@ -18,7 +18,8 @@ Internet
 Adjacent Railway services
   -> conversation-api.railway.internal:<conversation-service-port>
   -> bearer-authenticated conversation API
-  -> Resend Sending API
+  -> synchronous Resend Sending API or transactional outbox
+  -> bounded Resend Batch API drain
   -> PostgreSQL conversation projection
 ```
 
@@ -69,10 +70,13 @@ Private conversation application:
 
 ```text
 POST  /api/conversations/v1
+POST  /api/conversations/v1/outbox
+POST  /api/conversations/v1/outbox/drain
 GET   /api/conversations/v1?assignment=unassigned
 GET   /api/conversations/v1/{conversationId}
 PATCH /api/conversations/v1/{conversationId}
 POST  /api/conversations/v1/{conversationId}/messages
+POST  /api/conversations/v1/{conversationId}/messages/outbox
 GET   /api/conversations/v1/topics/{topicType}/{externalTopicId}
 GET   /docs
 GET   /openapi.json
@@ -95,6 +99,12 @@ Messages store:
 - Direction and send state
 - Sender, recipient, subject, text, and HTML
 - Provider and persistence timestamps
+
+Asynchronous sends use the same pending message rows as synchronous sends. A
+separate outbox stores only queue entries and persistent batch coordination; it
+does not duplicate addresses, subjects, or bodies. Batch membership remains
+fixed across retries because Resend idempotency applies to the whole ordered
+batch.
 
 Inbound messages are attached using RFC headers. An unmatched inbound message
 creates an unassigned conversation that can later be associated with a topic.
@@ -124,6 +134,7 @@ RESEND_API_KEY=re_xxxxxxxxx
 RESEND_WEBHOOK_SECRET=whsec_xxxxxxxxx
 RESEND_FROM=Mailbox <mailbox@example.com>
 CONVERSATION_API_KEY=replace-with-a-long-random-secret
+OUTBOX_DRAIN_API_KEY=replace-with-another-long-random-secret
 ```
 
 Environment ownership:
@@ -135,6 +146,7 @@ Environment ownership:
 | `RESEND_WEBHOOK_SECRET` | Required | Not used | Verify Svix signatures |
 | `RESEND_FROM` | Not used | Required | Configured sender identity |
 | `CONVERSATION_API_KEY` | Not used | Required | Private API bearer credential |
+| `OUTBOX_DRAIN_API_KEY` | Not used | Required | Dedicated scheduled-drain bearer credential |
 | `RESEND_API_BASE_URL` | Optional | Optional | Test-only Resend-compatible base URL |
 
 Normal mail-client replies go to `RESEND_FROM`. Its domain must be configured
@@ -210,6 +222,7 @@ RESEND_API_KEY=test-resend-api-key
 RESEND_API_BASE_URL=http://localhost:4010
 RESEND_FROM=Test Mailbox <mailbox@example.com>
 CONVERSATION_API_KEY=test-conversation-api-key
+OUTBOX_DRAIN_API_KEY=test-outbox-drain-api-key
 APP_BASE_URL=http://localhost:3000
 CONVERSATION_BASE_URL=http://localhost:3001
 ```
@@ -278,11 +291,15 @@ Conversation service:
 - Do not generate or attach a public domain
 - Configure `DATABASE_URL`, `RESEND_API_KEY`, `RESEND_FROM`, and
   `CONVERSATION_API_KEY`
+- Configure a distinct `OUTBOX_DRAIN_API_KEY` for the private scheduled caller
 - Define `PORT` explicitly as a service variable on the conversation service.
   Railway reference variables resolve against service variables, not image
   defaults, so `${{conversation-api.PORT}}` is empty without it.
 - In each caller, define `CONVERSATION_API_URL` with Railway references:
   `http://${{conversation-api.RAILWAY_PRIVATE_DOMAIN}}:${{conversation-api.PORT}}`
+- Invoke `POST /api/conversations/v1/outbox/drain` at least once per minute to
+  keep healthy-path queue delay below five minutes. Each call handles one batch
+  of at most 100 messages and does not poll internally.
 
 Both configs use `/api/health/v1` as the Railway readiness check. It validates
 required configuration and database access without returning sensitive details.

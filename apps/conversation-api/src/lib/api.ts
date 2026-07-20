@@ -8,9 +8,28 @@ import {
 import { NextResponse } from 'next/server';
 
 export function authorize(request: Request): NextResponse | null {
-  const expected = process.env.CONVERSATION_API_KEY;
+  return authorizeWithCredential(
+    request,
+    process.env.CONVERSATION_API_KEY,
+    'CONVERSATION_API_KEY',
+  );
+}
+
+export function authorizeOutboxDrain(request: Request): NextResponse | null {
+  return authorizeWithCredential(
+    request,
+    process.env.OUTBOX_DRAIN_API_KEY,
+    'OUTBOX_DRAIN_API_KEY',
+  );
+}
+
+function authorizeWithCredential(
+  request: Request,
+  expected: string | undefined,
+  variableName: string,
+): NextResponse | null {
   if (!expected) {
-    console.error('Missing CONVERSATION_API_KEY environment variable');
+    console.error(`Missing ${variableName} environment variable`);
     return NextResponse.json(
       { error: 'Server misconfiguration' },
       { status: 500 },

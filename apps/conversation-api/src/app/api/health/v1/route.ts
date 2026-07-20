@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   }
   if (
     !process.env.CONVERSATION_API_KEY ||
+    !process.env.OUTBOX_DRAIN_API_KEY ||
     !process.env.DATABASE_URL ||
     !process.env.RESEND_API_KEY ||
     !process.env.RESEND_FROM

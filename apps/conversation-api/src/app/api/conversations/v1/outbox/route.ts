@@ -11,17 +11,14 @@ import {
 import { NextResponse } from 'next/server';
 import {
   authorize,
-  getPageLimit,
-  isUuid,
   readJson,
   sendResultResponse,
   serializeMessage,
 } from '@/lib/api';
 import {
-  deliverPendingMessage,
-  recoverPendingMessage,
-} from '@/lib/conversation-service';
-import { validateCreateBody } from '@/lib/send-validation';
+  type CreateConversationInput,
+  validateCreateBody,
+} from '@/lib/send-validation';
 
 export async function POST(request: Request) {
   const unauthorized = authorize(request);
@@ -55,10 +52,12 @@ export async function POST(request: Request) {
   }
 
   const client = getPrismaClient();
-  const requestHash = hashSendRequest(validation.value);
+  const requestHash = hashSendRequest({
+    operation: 'outbox-opening-v1',
+    request: validation.value,
+  });
   const existing = await client.emailMessage.findUnique({
     where: { idempotencyKey },
-    include: { conversation: true },
   });
   if (existing) {
     if (existing.requestHash !== requestHash) {
@@ -67,8 +66,7 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
-    const recovered = await recoverPendingMessage(client, existing.id);
-    return sendResultResponse(recovered, existing.conversationId);
+    return sendResultResponse(existing, existing.conversationId);
   }
 
   const from = parseAddress(configuredFrom);
@@ -77,9 +75,8 @@ export async function POST(request: Request) {
   );
   const now = new Date();
 
-  let created;
   try {
-    created = await client.emailConversation.create({
+    const created = await client.emailConversation.create({
       data: {
         topicType: validation.value.topic.type,
         externalTopicId: validation.value.topic.externalId,
@@ -101,11 +98,19 @@ export async function POST(request: Request) {
             emailCreatedAt: now,
             idempotencyKey,
             requestHash,
+            outboxEntry: { create: {} },
           },
         },
       },
       include: { messages: true },
     });
+    return NextResponse.json(
+      {
+        conversationId: created.id,
+        message: serializeMessage(created.messages[0]),
+      },
+      { status: 202 },
+    );
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -123,8 +128,7 @@ export async function POST(request: Request) {
             { status: 409 },
           );
         }
-        const recovered = await recoverPendingMessage(client, raced.id);
-        return sendResultResponse(recovered, raced.conversationId);
+        return sendResultResponse(raced, raced.conversationId);
       }
 
       let reopened: { conversationId: string; messageId: string } | null;
@@ -145,11 +149,7 @@ export async function POST(request: Request) {
             where: { idempotencyKey },
           });
           if (racedReopen && racedReopen.requestHash === requestHash) {
-            const recovered = await recoverPendingMessage(
-              client,
-              racedReopen.id,
-            );
-            return sendResultResponse(recovered, racedReopen.conversationId);
+            return sendResultResponse(racedReopen, racedReopen.conversationId);
           }
           return NextResponse.json(
             { error: 'Idempotency key is already in use' },
@@ -159,10 +159,15 @@ export async function POST(request: Request) {
         throw reopenError;
       }
       if (reopened) {
-        return deliverOpeningMessage(
-          client,
-          reopened.conversationId,
-          reopened.messageId,
+        const message = await client.emailMessage.findUniqueOrThrow({
+          where: { id: reopened.messageId },
+        });
+        return NextResponse.json(
+          {
+            conversationId: reopened.conversationId,
+            message: serializeMessage(message),
+          },
+          { status: 202 },
         );
       }
       return NextResponse.json(
@@ -172,51 +177,12 @@ export async function POST(request: Request) {
     }
     throw error;
   }
-
-  return deliverOpeningMessage(client, created.id, created.messages[0].id);
-}
-
-async function deliverOpeningMessage(
-  client: PrismaClient,
-  conversationId: string,
-  messageId: string,
-) {
-  try {
-    const message = await deliverPendingMessage(client, messageId);
-    return NextResponse.json(
-      {
-        conversationId,
-        message: serializeMessage(message),
-      },
-      { status: 201 },
-    );
-  } catch (error) {
-    console.error(
-      'Failed to send opening conversation email:',
-      error instanceof Error ? error.message : 'Unknown error',
-    );
-    const message = await client.emailMessage.findUniqueOrThrow({
-      where: { id: messageId },
-    });
-    return NextResponse.json(
-      {
-        error: 'Failed to send email',
-        conversationId,
-        message: serializeMessage(message),
-      },
-      { status: 502 },
-    );
-  }
 }
 
 async function reopenFailedTopicConversation(
   client: PrismaClient,
   input: {
-    value: {
-      topic: { type: string; externalId: string; title: string };
-      participant: { email: string; name: string | null };
-      message: { text?: string; html?: string };
-    };
+    value: CreateConversationInput;
     from: { address: string; name: string | null };
     subject: string;
     idempotencyKey: string;
@@ -271,101 +237,9 @@ async function reopenFailedTopicConversation(
         emailCreatedAt: now,
         idempotencyKey: input.idempotencyKey,
         requestHash: input.requestHash,
+        outboxEntry: { create: {} },
       },
     });
     return { conversationId: conversation.id, messageId: message.id };
   });
-}
-
-export async function GET(request: Request) {
-  const unauthorized = authorize(request);
-  if (unauthorized) {
-    return unauthorized;
-  }
-
-  const url = new URL(request.url);
-  if (url.searchParams.get('assignment') !== 'unassigned') {
-    return NextResponse.json(
-      { error: 'Only assignment=unassigned is supported' },
-      { status: 400 },
-    );
-  }
-
-  const limit = getPageLimit(request);
-  const client = getPrismaClient();
-  const beforeValue = url.searchParams.get('before');
-  const before = beforeValue ? decodeConversationCursor(beforeValue) : null;
-  if (beforeValue && !before) {
-    return NextResponse.json(
-      { error: 'Invalid conversation cursor' },
-      { status: 400 },
-    );
-  }
-  const conversations = await client.emailConversation.findMany({
-    where: {
-      topicType: null,
-      externalTopicId: null,
-      ...(before
-        ? {
-            OR: [
-              { lastMessageAt: { lt: before.lastMessageAt } },
-              { lastMessageAt: before.lastMessageAt, id: { lt: before.id } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
-    take: limit + 1,
-  });
-  const hasMore = conversations.length > limit;
-  const page = conversations.slice(0, limit);
-  return NextResponse.json({
-    conversations: page.map((conversation) => ({
-      id: conversation.id,
-      title: conversation.title,
-      participant: {
-        address: conversation.participantAddress,
-        name: conversation.participantName,
-      },
-      lastMessageAt: conversation.lastMessageAt.toISOString(),
-    })),
-    page: {
-      hasMore,
-      before:
-        hasMore && page.at(-1) ? encodeConversationCursor(page.at(-1)!) : null,
-    },
-  });
-}
-
-function encodeConversationCursor(conversation: {
-  id: string;
-  lastMessageAt: Date;
-}) {
-  return Buffer.from(
-    JSON.stringify([conversation.lastMessageAt.toISOString(), conversation.id]),
-  ).toString('base64url');
-}
-
-function decodeConversationCursor(value: string): {
-  id: string;
-  lastMessageAt: Date;
-} | null {
-  try {
-    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
-    if (
-      !Array.isArray(parsed) ||
-      parsed.length !== 2 ||
-      typeof parsed[0] !== 'string' ||
-      typeof parsed[1] !== 'string' ||
-      !isUuid(parsed[1])
-    ) {
-      return null;
-    }
-    const lastMessageAt = new Date(parsed[0]);
-    return Number.isNaN(lastMessageAt.getTime())
-      ? null
-      : { lastMessageAt, id: parsed[1] };
-  } catch {
-    return null;
-  }
 }

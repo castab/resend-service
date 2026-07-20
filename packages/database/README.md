@@ -22,9 +22,18 @@ created before application builds.
   subject and participant.
 - `EmailMessage` stores conversation relationships, RFC identifiers, bodies,
   direction, and send state.
+- `EmailOutboxEntry` links a pending message to asynchronous delivery without
+  duplicating its sensitive payload.
+- `EmailOutboxBatch` persists ordered batch membership, leases, attempts, and
+  retry timing so ambiguous Resend requests can be retried idempotently.
 
 Attachments are not represented. Existing webhook idempotency constraints and
 message/send idempotency constraints are database-backed.
+
+Outbox messages and entries are inserted in one transaction. Workers claim
+unassigned entries with the partial queue index and `FOR UPDATE SKIP LOCKED`.
+Deleting a completed batch cascades only its outbox entries; message history is
+retained.
 
 ## Commands
 

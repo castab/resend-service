@@ -25,16 +25,21 @@ Authorization: Bearer <CONVERSATION_API_KEY>
 ```
 
 Sending operations also require a caller-generated `Idempotency-Key` header.
+The outbox drain operation instead requires its dedicated
+`OUTBOX_DRAIN_API_KEY` bearer credential.
 
 ## Routes
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/conversations/v1` | Create a topic conversation and send its opening message |
+| `POST` | `/api/conversations/v1/outbox` | Create a conversation and queue its opening message |
+| `POST` | `/api/conversations/v1/outbox/drain` | Claim and deliver one bounded outbox batch |
 | `GET` | `/api/conversations/v1?assignment=unassigned` | List unmatched inbound conversations |
 | `GET` | `/api/conversations/v1/{conversationId}` | Hydrate by internal conversation ID |
 | `PATCH` | `/api/conversations/v1/{conversationId}` | Assign an unassigned conversation to a topic |
 | `POST` | `/api/conversations/v1/{conversationId}/messages` | Send a reply |
+| `POST` | `/api/conversations/v1/{conversationId}/messages/outbox` | Queue a reply |
 | `GET` | `/api/conversations/v1/topics/{topicType}/{externalTopicId}` | Hydrate by caller-owned topic |
 
 The full request and response contract is available at `/docs` and
@@ -75,6 +80,21 @@ older pending intents become indeterminate rather than risking a duplicate.
 Sent-message metadata retrieval makes three bounded attempts after acceptance.
 If it remains unavailable, a later API reply or inbound webhook can retrieve it.
 
+The outbox routes return `202` after atomically inserting a `pending` message
+and queue entry. They do not send before responding. A drain invocation claims
+at most 100 new entries with `FOR UPDATE SKIP LOCKED`, persists their exact
+ordered batch membership, and makes at most one 15-second Resend batch request.
+Successful response IDs map by batch position. Resend rejects the entire request
+when any batch item is invalid; it does not return mixed validation results.
+
+Network errors, rate-limit `429`, `5xx`, and concurrent provider-idempotency
+responses keep the batch intact and schedule bounded 1, 2, then 5 minute
+backoff. Retries use `conversation-outbox/<batchId>` so an ambiguous provider
+response cannot create duplicates. The worker checks the 23-hour safety cutoff
+before every retry; an overdue batch or provider payload-mismatch response
+becomes `indeterminate` without another send. Validation, authentication,
+domain, and quota rejections mark every batch message `failed`.
+
 A topic conversation whose messages have all `failed` is not stuck: creating it
 again with a new idempotency key updates the participant, title, and subject,
 then sends a fresh opening message. Retrying the original key still reports the
@@ -92,6 +112,7 @@ ASCII control characters) of at most 255, 255, and 256 characters. Message
 | `RESEND_API_KEY` | Yes | Send and retrieve email |
 | `RESEND_FROM` | Yes | Fixed verified sender identity |
 | `CONVERSATION_API_KEY` | Yes | Private API bearer credential |
+| `OUTBOX_DRAIN_API_KEY` | Yes | Dedicated bearer credential for the scheduled drain caller |
 | `RESEND_API_BASE_URL` | No | Integration-test API substitute |
 
 ## Development
@@ -111,3 +132,6 @@ The development server uses port 3001.
 Use `/apps/conversation-api/railway.json`, keep the repository root as build
 context, and do not generate a public domain. The image is built by
 `Dockerfile.conversation-api` and runs shared migrations before deployment.
+Configure a private scheduled caller to invoke the drain route at least once per
+minute for a healthy-path queue delay below five minutes. Each invocation is
+bounded to one batch; queue throughput is at most 100 messages per invocation.
