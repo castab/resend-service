@@ -3,6 +3,7 @@ import {
   getConfiguredResendClient,
   ResendApiError,
   recordOutboundInternetMessageId,
+  type SendEmailInput,
 } from '@resend-service/email';
 
 const SENT_METADATA_RETRY_DELAYS_MS = [0, 100, 250] as const;
@@ -30,21 +31,7 @@ export async function deliverPendingMessage(
         }
         const resend = getConfiguredResendClient();
         const sent = await resend.send(
-          {
-            from: formatAddress(message.fromAddress, message.fromName),
-            to: [message.toAddress],
-            subject: message.subject,
-            ...(message.textBody === null ? {} : { text: message.textBody }),
-            ...(message.htmlBody === null ? {} : { html: message.htmlBody }),
-            ...(message.inReplyToInternetMessageId
-              ? {
-                  headers: {
-                    'In-Reply-To': message.inReplyToInternetMessageId,
-                    References: message.referenceInternetMessageIds.join(' '),
-                  },
-                }
-              : {}),
-          },
+          buildSendEmailInput(message),
           `conversation/${message.id}`,
         );
         return await transaction.emailMessage.update({
@@ -185,4 +172,22 @@ export async function ensureInternetMessageId(
 
 function formatAddress(address: string, name: string | null): string {
   return name ? `${name} <${address}>` : address;
+}
+
+export function buildSendEmailInput(message: EmailMessage): SendEmailInput {
+  return {
+    from: formatAddress(message.fromAddress, message.fromName),
+    to: [message.toAddress],
+    subject: message.subject,
+    ...(message.textBody === null ? {} : { text: message.textBody }),
+    ...(message.htmlBody === null ? {} : { html: message.htmlBody }),
+    ...(message.inReplyToInternetMessageId
+      ? {
+          headers: {
+            'In-Reply-To': message.inReplyToInternetMessageId,
+            References: message.referenceInternetMessageIds.join(' '),
+          },
+        }
+      : {}),
+  };
 }

@@ -64,10 +64,39 @@ model EmailMessage {
   conversation             EmailConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   parent                   EmailMessage?      @relation("EmailMessageReplies", fields: [parentMessageId], references: [id], onDelete: SetNull)
   replies                  EmailMessage[]     @relation("EmailMessageReplies")
+  outboxEntry              EmailOutboxEntry?
 
   @@index([conversationId, emailCreatedAt, id], map: "idx_email_messages_conversation_created")
   @@index([inReplyToInternetMessageId], map: "idx_email_messages_in_reply_to")
   @@map("email_messages")
+}
+
+model EmailOutboxBatch {
+  id             String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  nextAttemptAt  DateTime           @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  firstAttemptAt DateTime?          @map("first_attempt_at") @db.Timestamptz(6)
+  attemptCount   Int                @default(0) @map("attempt_count")
+  leaseToken     String?            @map("lease_token") @db.Uuid
+  leaseUntil     DateTime?          @map("lease_until") @db.Timestamptz(6)
+  lastErrorCode  String?            @map("last_error_code") @db.VarChar(64)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  entries        EmailOutboxEntry[]
+
+  @@index([nextAttemptAt, leaseUntil, id], map: "idx_email_outbox_batches_ready")
+  @@map("email_outbox_batches")
+}
+
+model EmailOutboxEntry {
+  messageId     String            @id @map("message_id") @db.Uuid
+  batchId       String?           @map("batch_id") @db.Uuid
+  batchPosition Int?              @map("batch_position")
+  queuedAt      DateTime          @default(now()) @map("queued_at") @db.Timestamptz(6)
+  message       EmailMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  batch         EmailOutboxBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, batchPosition], map: "email_outbox_entries_batch_position_key")
+  @@map("email_outbox_entries")
 }
 
 model EmailWebhookEvent {

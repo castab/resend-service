@@ -6,13 +6,26 @@ export class FakeResendServer {
   private server: Server | null = null;
   private sequence = 0;
   private readonly idempotentResponses = new Map<string, string>();
+  private readonly idempotentBatchResponses = new Map<
+    string,
+    { body: string; ids: string[] }
+  >();
   failNextSendStatus: number | null = null;
+  failNextBatchStatus: number | null = null;
+  failNextBatchCode = 'application_error';
+  disconnectAfterNextBatch = false;
+  malformedNextBatchResponse = false;
   sentMetadataFailuresRemaining = 0;
   sentMetadataRequestCount = 0;
   readonly sends: Array<{
     id: string;
     idempotencyKey: string | undefined;
     input: SendEmailInput;
+  }> = [];
+  readonly batches: Array<{
+    idempotencyKey: string | undefined;
+    inputs: SendEmailInput[];
+    ids: string[];
   }> = [];
   readonly received = new Map<string, ResendEmail>();
 
@@ -41,8 +54,14 @@ export class FakeResendServer {
   reset() {
     this.sequence = 0;
     this.sends.length = 0;
+    this.batches.length = 0;
     this.idempotentResponses.clear();
+    this.idempotentBatchResponses.clear();
     this.failNextSendStatus = null;
+    this.failNextBatchStatus = null;
+    this.failNextBatchCode = 'application_error';
+    this.disconnectAfterNextBatch = false;
+    this.malformedNextBatchResponse = false;
     this.sentMetadataFailuresRemaining = 0;
     this.sentMetadataRequestCount = 0;
     this.received.clear();
@@ -75,6 +94,54 @@ export class FakeResendServer {
     response: import('node:http').ServerResponse,
   ) {
     const url = new URL(request.url ?? '/', 'http://localhost');
+    if (request.method === 'POST' && url.pathname === '/emails/batch') {
+      const body = await readBody(request);
+      const inputs = JSON.parse(body) as SendEmailInput[];
+      if (this.failNextBatchStatus) {
+        const status = this.failNextBatchStatus;
+        const code = this.failNextBatchCode;
+        this.failNextBatchStatus = null;
+        this.failNextBatchCode = 'application_error';
+        return json(response, status, {
+          name: code,
+          message: 'simulated_batch_failure',
+        });
+      }
+      const idempotencyKey = request.headers['idempotency-key'] as
+        | string
+        | undefined;
+      const existing = idempotencyKey
+        ? this.idempotentBatchResponses.get(idempotencyKey)
+        : undefined;
+      if (existing && existing.body !== body) {
+        return json(response, 409, {
+          name: 'invalid_idempotent_request',
+          message: 'batch payload changed',
+        });
+      }
+
+      const ids = existing?.ids ?? inputs.map(() => `batch-${++this.sequence}`);
+      if (!existing) {
+        this.batches.push({ idempotencyKey, inputs, ids });
+        for (const [index, input] of inputs.entries()) {
+          this.sends.push({ id: ids[index], idempotencyKey, input });
+        }
+        if (idempotencyKey) {
+          this.idempotentBatchResponses.set(idempotencyKey, { body, ids });
+        }
+      }
+      if (this.disconnectAfterNextBatch) {
+        this.disconnectAfterNextBatch = false;
+        response.destroy();
+        return;
+      }
+      if (this.malformedNextBatchResponse) {
+        this.malformedNextBatchResponse = false;
+        return json(response, 200, { data: ids.map(() => ({})) });
+      }
+      return json(response, 200, { data: ids.map((id) => ({ id })) });
+    }
+
     if (request.method === 'POST' && url.pathname === '/emails') {
       const body = await readBody(request);
       const input = JSON.parse(body) as SendEmailInput;

@@ -62,6 +62,7 @@ jobs:
           RESEND_API_BASE_URL: http://localhost:4010
           RESEND_FROM: "Test Mailbox <mailbox@example.com>"
           CONVERSATION_API_KEY: test-conversation-api-key
+          OUTBOX_DRAIN_API_KEY: test-outbox-drain-api-key
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
 
       - name: Wait for applications
@@ -85,6 +86,7 @@ jobs:
           RESEND_API_BASE_URL: http://localhost:4010
           RESEND_FROM: "Test Mailbox <mailbox@example.com>"
           CONVERSATION_API_KEY: test-conversation-api-key
+          OUTBOX_DRAIN_API_KEY: test-outbox-drain-api-key
           APP_BASE_URL: http://localhost:3000
           CONVERSATION_BASE_URL: http://localhost:3001
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
@@ -109,9 +111,10 @@ jobs:
             -e PORT=3101 \
             -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/resend_test \
             -e RESEND_API_KEY=test-resend-api-key \
-            -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
-            -e CONVERSATION_API_KEY=test-conversation-api-key \
-            resend-conversation-api:test
+             -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
+             -e CONVERSATION_API_KEY=test-conversation-api-key \
+             -e OUTBOX_DRAIN_API_KEY=test-outbox-drain-api-key \
+             resend-conversation-api:test
           for i in {1..30}; do
             curl --fail --silent http://localhost:3100/api/health/v1 && break
             sleep 1

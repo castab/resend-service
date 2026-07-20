@@ -32,6 +32,10 @@
     {
       "name": "Operations",
       "description": "Deployment readiness"
+    },
+    {
+      "name": "Outbox",
+      "description": "Asynchronous message enqueue and bounded batch delivery"
     }
   ],
   "paths": {
@@ -244,6 +248,117 @@
         }
       }
     },
+    "/api/conversations/v1/outbox": {
+      "post": {
+        "operationId": "enqueueConversation",
+        "summary": "Queue a topic conversation",
+        "description": "Atomically creates the conversation, pending opening message, and outbox entry without sending to Resend. The request body matches the synchronous conversation-start operation.",
+        "tags": ["Outbox"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An earlier completed outbox request with this idempotency key was returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The persisted opening message is pending outbox delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "description": "An earlier outbox request completed as failed or indeterminate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/v1/outbox/drain": {
+      "post": {
+        "operationId": "drainConversationOutbox",
+        "summary": "Deliver one outbox batch",
+        "description": "Claims or reclaims one persistent batch and makes at most one bounded Resend batch request. Transient failures retain exact ordered membership for a later idempotent retry.",
+        "tags": ["Outbox"],
+        "security": [
+          {
+            "outboxDrainAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainOutboxRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The bounded drain invocation completed, including persisted retry scheduling when applicable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainOutboxResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/api/conversations/v1/{conversationId}": {
       "parameters": [
         {
@@ -433,6 +548,89 @@
         }
       }
     },
+    "/api/conversations/v1/{conversationId}/messages/outbox": {
+      "post": {
+        "operationId": "enqueueConversationMessage",
+        "summary": "Queue a conversation reply",
+        "description": "Resolves and freezes the reply parent and RFC ancestry, then atomically creates a pending message and outbox entry without sending it. The request body matches the synchronous reply operation.",
+        "tags": ["Outbox"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An earlier completed outbox request with this idempotency key was returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The persisted reply is pending outbox delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "description": "An earlier outbox request completed as failed or indeterminate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The selected parent RFC Message-ID could not be retrieved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/v1/topics/{topicType}/{externalTopicId}": {
       "get": {
         "operationId": "getConversationByTopic",
@@ -485,6 +683,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Service credential shared only with authorized private-network callers."
+      },
+      "outboxDrainAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Dedicated credential for the private scheduled outbox drain caller."
       }
     },
     "parameters": {
@@ -650,6 +853,73 @@
             }
           }
         ]
+      },
+      "DrainOutboxRequest": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Maximum number of unbatched messages to assign when creating a new batch."
+          }
+        }
+      },
+      "DrainOutboxItemResult": {
+        "type": "object",
+        "required": ["messageId", "state", "resendEmailId"],
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["pending", "accepted", "failed", "indeterminate"]
+          },
+          "resendEmailId": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "DrainOutboxResult": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "claimed",
+          "accepted",
+          "failed",
+          "retryScheduled",
+          "indeterminate",
+          "results"
+        ],
+        "properties": {
+          "batchId": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "claimed": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "accepted": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "failed": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "retryScheduled": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "indeterminate": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "results": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/DrainOutboxItemResult"
+            }
+          }
+        }
       },
       "Message": {
         "type": "object",

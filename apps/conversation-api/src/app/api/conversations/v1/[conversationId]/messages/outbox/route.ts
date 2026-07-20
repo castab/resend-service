@@ -13,11 +13,7 @@ import {
   sendResultResponse,
   serializeMessage,
 } from '@/lib/api';
-import {
-  deliverPendingMessage,
-  ensureInternetMessageId,
-  recoverPendingMessage,
-} from '@/lib/conversation-service';
+import { ensureInternetMessageId } from '@/lib/conversation-service';
 import { validateMessageBody } from '@/lib/send-validation';
 
 export async function POST(
@@ -36,7 +32,6 @@ export async function POST(
       { status: 400 },
     );
   }
-
   const parsed = await readJson(request);
   if ('response' in parsed) {
     return parsed.response;
@@ -54,7 +49,11 @@ export async function POST(
     );
   }
   const client = getPrismaClient();
-  const requestHash = hashSendRequest({ conversationId, ...validation.value });
+  const requestHash = hashSendRequest({
+    operation: 'outbox-reply-v1',
+    conversationId,
+    request: validation.value,
+  });
   const existing = await client.emailMessage.findUnique({
     where: { idempotencyKey },
   });
@@ -68,8 +67,7 @@ export async function POST(
         { status: 409 },
       );
     }
-    const recovered = await recoverPendingMessage(client, existing.id);
-    return sendResultResponse(recovered, conversationId);
+    return sendResultResponse(existing, conversationId);
   }
 
   const conversation = await client.emailConversation.findUnique({
@@ -81,13 +79,9 @@ export async function POST(
       { status: 404 },
     );
   }
-
   const parent = validation.value.replyToMessageId
     ? await client.emailMessage.findFirst({
-        where: {
-          id: validation.value.replyToMessageId,
-          conversationId,
-        },
+        where: { id: validation.value.replyToMessageId, conversationId },
       })
     : await client.emailMessage.findFirst({
         where: {
@@ -137,9 +131,8 @@ export async function POST(
   );
   const now = new Date();
 
-  let pending;
   try {
-    pending = await client.$transaction(async (transaction) => {
+    const pending = await client.$transaction(async (transaction) => {
       const message = await transaction.emailMessage.create({
         data: {
           conversationId,
@@ -157,6 +150,7 @@ export async function POST(
           emailCreatedAt: now,
           idempotencyKey,
           requestHash,
+          outboxEntry: { create: {} },
         },
       });
       await transaction.$executeRaw`
@@ -167,6 +161,10 @@ export async function POST(
       `;
       return message;
     });
+    return NextResponse.json(
+      { conversationId, message: serializeMessage(pending) },
+      { status: 202 },
+    );
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -180,8 +178,7 @@ export async function POST(
         raced.requestHash === requestHash &&
         raced.conversationId === conversationId
       ) {
-        const recovered = await recoverPendingMessage(client, raced.id);
-        return sendResultResponse(recovered, conversationId);
+        return sendResultResponse(raced, conversationId);
       }
       return NextResponse.json(
         { error: 'Idempotency key is already in use' },
@@ -189,29 +186,5 @@ export async function POST(
       );
     }
     throw error;
-  }
-
-  try {
-    const message = await deliverPendingMessage(client, pending.id);
-    return NextResponse.json(
-      { conversationId, message: serializeMessage(message) },
-      { status: 201 },
-    );
-  } catch (error) {
-    console.error(
-      'Failed to send conversation reply:',
-      error instanceof Error ? error.message : 'Unknown error',
-    );
-    const message = await client.emailMessage.findUniqueOrThrow({
-      where: { id: pending.id },
-    });
-    return NextResponse.json(
-      {
-        error: 'Failed to send email',
-        conversationId,
-        message: serializeMessage(message),
-      },
-      { status: 502 },
-    );
   }
 }

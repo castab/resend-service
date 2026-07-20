@@ -22,6 +22,10 @@ export interface ResendEmail {
 
 export interface ResendEmailClient {
   send(input: SendEmailInput, idempotencyKey: string): Promise<{ id: string }>;
+  sendBatch(
+    input: SendEmailInput[],
+    idempotencyKey: string,
+  ): Promise<{ data: Array<{ id: string }> }>;
   getSent(id: string): Promise<ResendEmail>;
   getReceived(id: string): Promise<ResendEmail>;
 }
@@ -31,6 +35,7 @@ export class ResendApiError extends Error {
     message: string,
     readonly status: number,
     readonly responseBody: string,
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = 'ResendApiError';
@@ -58,10 +63,26 @@ export function createResendEmailClient({
 
     if (!response.ok) {
       const responseBody = await response.text();
+      let code: string | null = null;
+      try {
+        const body = JSON.parse(responseBody) as {
+          name?: unknown;
+          code?: unknown;
+        };
+        code =
+          typeof body.name === 'string'
+            ? body.name
+            : typeof body.code === 'string'
+              ? body.code
+              : null;
+      } catch {
+        // Non-JSON errors still retain their status for retry classification.
+      }
       throw new ResendApiError(
         `Resend API request failed with status ${response.status}`,
         response.status,
         responseBody,
+        code,
       );
     }
 
@@ -71,6 +92,13 @@ export function createResendEmailClient({
   return {
     send(input, idempotencyKey) {
       return request<{ id: string }>('/emails', {
+        method: 'POST',
+        headers: { 'idempotency-key': idempotencyKey },
+        body: JSON.stringify(input),
+      });
+    },
+    sendBatch(input, idempotencyKey) {
+      return request<{ data: Array<{ id: string }> }>('/emails/batch', {
         method: 'POST',
         headers: { 'idempotency-key': idempotencyKey },
         body: JSON.stringify(input),
