@@ -29,6 +29,14 @@ When a parent arrives after a child, unassigned child conversations are merged
 into the selected conversation and unresolved parent links are repaired. A
 topic-assigned conversation is preferred over an unassigned one.
 
+Accepted outbound messages normally receive their provider `Message-ID`
+immediately after sending. If that metadata is delayed, inbound projection may
+hydrate at most ten missing outbound candidates for the same participant. If
+recovery of a recent send is incomplete, processing fails for a bounded webhook
+retry rather than assigning the reply incorrectly. Recording the outbound ID
+also merges a matching unassigned child conversation, including during webhook
+replay.
+
 For outbound replies, References is the selected parent's existing References
 plus the parent's RFC Message-ID. This preserves branches rather than treating
 every message in a conversation as ancestry.

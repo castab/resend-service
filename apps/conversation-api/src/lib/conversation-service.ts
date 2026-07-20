@@ -2,7 +2,10 @@ import type { EmailMessage, PrismaClient } from '@resend-service/database';
 import {
   getConfiguredResendClient,
   ResendApiError,
+  recordOutboundInternetMessageId,
 } from '@resend-service/email';
+
+const SENT_METADATA_RETRY_DELAYS_MS = [0, 100, 250] as const;
 
 export async function deliverPendingMessage(
   client: PrismaClient,
@@ -91,24 +94,31 @@ async function hydrateSentMetadata(
     return message;
   }
 
-  try {
-    const retrieved = await getConfiguredResendClient().getSent(
-      message.resendEmailId,
-    );
-    return await client.emailMessage.update({
-      where: { id: message.id },
-      data: {
-        internetMessageId: retrieved.message_id,
-        emailCreatedAt: new Date(retrieved.created_at),
-      },
-    });
-  } catch (error) {
-    console.warn(
-      'Sent email metadata is not available yet:',
-      error instanceof Error ? error.message : 'Unknown error',
-    );
-    return message;
+  let lastError: unknown;
+  for (const delayMs of SENT_METADATA_RETRY_DELAYS_MS) {
+    if (delayMs) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    try {
+      const retrieved = await getConfiguredResendClient().getSent(
+        message.resendEmailId,
+      );
+      return await recordOutboundInternetMessageId(
+        client,
+        message.id,
+        retrieved.message_id,
+        new Date(retrieved.created_at),
+      );
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  console.warn(
+    'Sent email metadata is not available yet:',
+    lastError instanceof Error ? lastError.message : 'Unknown error',
+  );
+  return message;
 }
 
 export async function recoverPendingMessage(
@@ -157,10 +167,19 @@ export async function ensureInternetMessageId(
     message.direction === 'INBOUND'
       ? await resend.getReceived(message.resendEmailId)
       : await resend.getSent(message.resendEmailId);
-  await client.emailMessage.update({
-    where: { id: message.id },
-    data: { internetMessageId: retrieved.message_id },
-  });
+  if (message.direction === 'OUTBOUND') {
+    await recordOutboundInternetMessageId(
+      client,
+      message.id,
+      retrieved.message_id,
+      new Date(retrieved.created_at),
+    );
+  } else {
+    await client.emailMessage.update({
+      where: { id: message.id },
+      data: { internetMessageId: retrieved.message_id },
+    });
+  }
   return retrieved.message_id;
 }
 

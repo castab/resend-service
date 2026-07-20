@@ -112,7 +112,7 @@ before browser rendering.
 - PostgreSQL 18 or newer for native `uuidv7()`
 - A Resend API key
 - A Resend webhook signing secret
-- A verified Resend sending/receiving domain
+- A verified Resend sending domain and a receiving path for `RESEND_FROM`
 
 ## Configuration
 
@@ -136,6 +136,13 @@ Environment ownership:
 | `RESEND_FROM` | Not used | Required | Configured sender identity |
 | `CONVERSATION_API_KEY` | Not used | Required | Private API bearer credential |
 | `RESEND_API_BASE_URL` | Optional | Optional | Test-only Resend-compatible base URL |
+
+Normal mail-client replies go to `RESEND_FROM`. Its domain must be configured
+for Resend Receiving, or the mailbox must forward incoming mail to a Resend
+receiving address. If the root domain already uses another mail provider, use a
+receiving subdomain or forwarding rather than replacing its production MX
+records. In Resend, subscribe the public webhook URL to the `email.received`
+event.
 
 Prisma CLI commands load `.env` through
 `packages/database/prisma.config.ts`. Values stored only in `.env.local` are
@@ -262,6 +269,8 @@ Webhook service:
 - Configure `DATABASE_URL`, `RESEND_API_KEY`, and `RESEND_WEBHOOK_SECRET`
 - Configure Resend to deliver to
   `https://<public-host>/api/webhooks/resend/v1`
+- Subscribe that webhook to `email.received`; normal replies cannot be
+  projected without that event
 
 Conversation service:
 

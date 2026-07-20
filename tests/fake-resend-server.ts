@@ -7,6 +7,8 @@ export class FakeResendServer {
   private sequence = 0;
   private readonly idempotentResponses = new Map<string, string>();
   failNextSendStatus: number | null = null;
+  sentMetadataFailuresRemaining = 0;
+  sentMetadataRequestCount = 0;
   readonly sends: Array<{
     id: string;
     idempotencyKey: string | undefined;
@@ -41,6 +43,8 @@ export class FakeResendServer {
     this.sends.length = 0;
     this.idempotentResponses.clear();
     this.failNextSendStatus = null;
+    this.sentMetadataFailuresRemaining = 0;
+    this.sentMetadataRequestCount = 0;
     this.received.clear();
     this.received.set('em_received123', {
       id: 'em_received123',
@@ -105,6 +109,11 @@ export class FakeResendServer {
 
     const sentMatch = url.pathname.match(/^\/emails\/([^/]+)$/);
     if (request.method === 'GET' && sentMatch) {
+      this.sentMetadataRequestCount++;
+      if (this.sentMetadataFailuresRemaining > 0) {
+        this.sentMetadataFailuresRemaining--;
+        return json(response, 404, { error: 'not_ready' });
+      }
       const id = decodeURIComponent(sentMatch[1]);
       const sent = this.sends.find((entry) => entry.id === id);
       return sent

@@ -48,6 +48,8 @@ aggregate readiness after checking configuration and database connectivity.
 - A `(topicType, externalTopicId)` pair owns at most one conversation.
 - A conversation has one external participant and the configured `RESEND_FROM`
   mailbox.
+- Normal inbox replies target `RESEND_FROM`; its domain must use Resend
+  Receiving or forward to a Resend receiving address.
 - The topic title is the default initial subject.
 - Replies use `Re: <canonical subject>`.
 - `replyToMessageId` selects an explicit parent. Otherwise the latest accepted
@@ -70,8 +72,8 @@ Resend calls abort after 15 seconds. Explicit API failures become `failed`;
 ambiguous network failures become `indeterminate`. A retry of a pending request
 within 23 hours makes one bounded call with the same provider idempotency key;
 older pending intents become indeterminate rather than risking a duplicate.
-If sent-message metadata is temporarily unavailable, a later reply attempts one
-bounded retrieval before sending.
+Sent-message metadata retrieval makes three bounded attempts after acceptance.
+If it remains unavailable, a later API reply or inbound webhook can retrieve it.
 
 A topic conversation whose messages have all `failed` is not stuck: creating it
 again with a new idempotency key updates the participant, title, and subject,

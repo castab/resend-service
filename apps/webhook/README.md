@@ -20,9 +20,18 @@ timeout to obtain text, HTML, and headers. It projects the message into an
 existing RFC thread or creates an unassigned conversation. Attachment content
 and metadata are not retrieved or projected.
 
+If an inbound reply references an accepted outbound message whose provider
+`Message-ID` was not available immediately after sending, the route retrieves a
+bounded set of missing outbound records before projection. A matching message
+is attached to its parent conversation. Incomplete recovery for recent sends
+returns `500` instead of acknowledging a potentially incorrect unassigned
+conversation.
+
 Resend delivery is at least once and unordered. A unique `svix_id` prevents a
 second ledger row. Projection uses the Resend email identifier for idempotency
-and can resolve replies that arrive before their parent.
+and can resolve replies that arrive before their parent. Replaying a completed
+`email.received` webhook also reruns parent recovery, allowing an already
+unassigned reply to be repaired without creating a duplicate message.
 
 ## Responses
 
@@ -64,6 +73,10 @@ This service requires a public domain. Configure the exact public URL in Resend:
 ```text
 https://<host>/api/webhooks/resend/v1
 ```
+
+Subscribe the endpoint to `email.received`. The domain used by the conversation
+API's `RESEND_FROM` must use Resend Receiving or forward incoming replies to a
+Resend receiving address.
 
 The image is built by `Dockerfile.webhook` and runs shared migrations before
 deployment.
