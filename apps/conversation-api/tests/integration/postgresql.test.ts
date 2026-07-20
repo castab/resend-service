@@ -64,6 +64,16 @@ describe('Private conversation API', () => {
     expect(hydrated.messages[1].parentMessageId).toBe(hydrated.messages[0].id);
   });
 
+  it('retries temporarily unavailable sent threading metadata', async () => {
+    resendServer.sentMetadataFailuresRemaining = 2;
+
+    const created = await createConversation('metadata-retry');
+
+    expect(created.response.status).toBe(201);
+    expect(created.body.message.internetMessageId).toBe('<sent-1@resend.test>');
+    expect(resendServer.sentMetadataRequestCount).toBe(3);
+  });
+
   it('does not send twice when an idempotency key is retried', async () => {
     const first = await createConversation('same-request');
     const second = await createConversation('same-request');

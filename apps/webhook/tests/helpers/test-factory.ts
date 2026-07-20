@@ -21,6 +21,15 @@ export interface TestDbClient {
   truncateConversations(): Promise<void>;
   findEmailMessageByResendId(resendEmailId: string): Promise<unknown>;
   getThreadState(childResendEmailId: string): Promise<unknown>;
+  createOutboundWithoutInternetMessageId(
+    resendEmailId: string,
+    participantAddress: string,
+  ): Promise<void>;
+  createWaitingInboundMessage(
+    resendEmailId: string,
+    participantAddress: string,
+    parentInternetMessageId: string,
+  ): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -418,6 +427,124 @@ export function createWebhookTests(createClient: () => TestDbClient) {
         expect(
           await dbClient.getThreadState(childEvent.data.email_id),
         ).toMatchObject({
+          conversation_count: 1,
+          parent_internet_message_id: parentMessageId,
+        });
+      });
+
+      it('hydrates an outbound parent before projecting its inbox reply', async () => {
+        const participantAddress = 'replying@example.com';
+        const outboundResendId = 'sent-thread-parent';
+        const parentMessageId = `<${outboundResendId}@resend.test>`;
+        const knownAncestorMessageId = `<known-${outboundResendId}@resend.test>`;
+        await dbClient.createOutboundWithoutInternetMessageId(
+          outboundResendId,
+          participantAddress,
+        );
+        resendServer.sends.push({
+          id: outboundResendId,
+          idempotencyKey: 'conversation/test',
+          input: {
+            from: 'Mailbox <mailbox@example.com>',
+            to: [participantAddress],
+            subject: 'Threaded message',
+            text: 'Opening message',
+          },
+        });
+        const event = fixtures.email.received({
+          data: {
+            email_id: 'em_inbox_reply',
+            message_id: '<inbox-reply@example.com>',
+            from: participantAddress,
+            to: ['mailbox@example.com'],
+            subject: 'Re: Threaded message',
+            created_at: '2026-07-19T04:05:00.000Z',
+          },
+        });
+        resendServer.received.set(event.data.email_id, {
+          id: event.data.email_id,
+          message_id: event.data.message_id as string,
+          from: participantAddress,
+          to: ['mailbox@example.com'],
+          subject: event.data.subject,
+          created_at: event.data.created_at,
+          text: 'Normal inbox reply',
+          html: null,
+          headers: {
+            'in-reply-to': parentMessageId,
+            references: `${knownAncestorMessageId} ${parentMessageId}`,
+          },
+          reply_to: [],
+        });
+
+        const signed = signPayload(
+          TEST_CONFIG.webhookSecret,
+          event,
+          generateSvixId(),
+        );
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: signed.headers,
+          body: signed.body,
+        });
+
+        expect(response.status).toBe(200);
+        expect(
+          await dbClient.getThreadState(event.data.email_id),
+        ).toMatchObject({
+          conversation_count: 1,
+          parent_internet_message_id: parentMessageId,
+        });
+      });
+
+      it('repairs an already projected reply when its webhook is replayed', async () => {
+        const participantAddress = 'replay@example.com';
+        const outboundResendId = 'sent-replay-parent';
+        const inboundResendId = 'em_replay_child';
+        const parentMessageId = `<${outboundResendId}@resend.test>`;
+        await dbClient.createOutboundWithoutInternetMessageId(
+          outboundResendId,
+          participantAddress,
+        );
+        await dbClient.createWaitingInboundMessage(
+          inboundResendId,
+          participantAddress,
+          parentMessageId,
+        );
+        resendServer.sends.push({
+          id: outboundResendId,
+          idempotencyKey: 'conversation/replay',
+          input: {
+            from: 'Mailbox <mailbox@example.com>',
+            to: [participantAddress],
+            subject: 'Replay message',
+            text: 'Opening message',
+          },
+        });
+        const event = fixtures.email.received({
+          data: {
+            email_id: inboundResendId,
+            message_id: '<replay-child@example.com>',
+            from: participantAddress,
+            to: ['mailbox@example.com'],
+            subject: 'Re: Replay message',
+            created_at: '2026-07-19T04:06:00.000Z',
+          },
+        });
+        const signed = signPayload(
+          TEST_CONFIG.webhookSecret,
+          event,
+          generateSvixId(),
+        );
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: signed.headers,
+          body: signed.body,
+        });
+
+        expect(response.status).toBe(200);
+        expect(await dbClient.getThreadState(inboundResendId)).toMatchObject({
           conversation_count: 1,
           parent_internet_message_id: parentMessageId,
         });

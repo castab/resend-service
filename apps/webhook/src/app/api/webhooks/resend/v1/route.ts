@@ -9,7 +9,11 @@ import type {
   EmailWebhookEvent,
 } from '@resend-service/email';
 import {
+  extractMessageIds,
   getConfiguredResendClient,
+  getHeader,
+  hydrateReferencedOutboundMessages,
+  parseAddress,
   projectInboundEmail,
 } from '@resend-service/email';
 import {
@@ -65,12 +69,39 @@ async function insertEmailEvent(
     const existingReceivedMessage = await client.emailMessage.findUnique({
       where: { resendEmailId: event.data.email_id },
     });
-    if (!existingReceivedMessage) {
-      const receivedEmail = await getConfiguredResendClient().getReceived(
-        event.data.email_id,
+    const resend = getConfiguredResendClient();
+    if (existingReceivedMessage) {
+      await hydrateReferencedOutboundMessages(
+        client,
+        resend,
+        existingReceivedMessage.fromAddress,
+        [
+          ...existingReceivedMessage.referenceInternetMessageIds,
+          ...(existingReceivedMessage.inReplyToInternetMessageId
+            ? [existingReceivedMessage.inReplyToInternetMessageId]
+            : []),
+        ],
+        existingReceivedMessage.inReplyToInternetMessageId ??
+          existingReceivedMessage.referenceInternetMessageIds.at(-1),
       );
-      await projectInboundEmail(client, event.data, receivedEmail);
+      return;
     }
+
+    const receivedEmail = await resend.getReceived(event.data.email_id);
+    const inReplyTo = extractMessageIds(
+      getHeader(receivedEmail.headers, 'in-reply-to'),
+    );
+    const references = extractMessageIds(
+      getHeader(receivedEmail.headers, 'references'),
+    );
+    await hydrateReferencedOutboundMessages(
+      client,
+      resend,
+      parseAddress(event.data.from || receivedEmail.from).address,
+      [...references, ...inReplyTo],
+      inReplyTo.at(-1) ?? references.at(-1),
+    );
+    await projectInboundEmail(client, event.data, receivedEmail);
   }
 }
 

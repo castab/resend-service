@@ -97,6 +97,71 @@ export class PostgreSQLTestClient {
     return rows[0] || null;
   }
 
+  async createOutboundWithoutInternetMessageId(
+    resendEmailId: string,
+    participantAddress: string,
+  ) {
+    if (!this.client) {
+      throw new Error('Not connected');
+    }
+    await this.client.query(
+      `WITH conversation AS (
+         INSERT INTO email_conversations
+           (topic_type, external_topic_id, title, subject,
+            participant_address, last_message_at, updated_at)
+         VALUES
+           ('test', $1, 'Threaded message', 'Threaded message', $2, now(), now())
+         RETURNING id
+       ), known_parent AS (
+         INSERT INTO email_messages
+           (conversation_id, direction, state, resend_email_id,
+            internet_message_id, reference_internet_message_ids, from_address,
+            to_address, subject, text_body, email_created_at, updated_at)
+         SELECT id, 'OUTBOUND', 'ACCEPTED', $1 || '-known',
+                '<known-' || $1 || '@resend.test>', '{}',
+                'mailbox@example.com', $2, 'Threaded message',
+                'Earlier message', now() - interval '1 minute', now()
+         FROM conversation
+       )
+       INSERT INTO email_messages
+         (conversation_id, direction, state, resend_email_id,
+          reference_internet_message_ids, from_address, to_address, subject,
+          text_body, email_created_at, updated_at)
+       SELECT id, 'OUTBOUND', 'ACCEPTED', $1, '{}', 'mailbox@example.com', $2,
+              'Threaded message', 'Opening message', now(), now()
+       FROM conversation`,
+      [resendEmailId, participantAddress],
+    );
+  }
+
+  async createWaitingInboundMessage(
+    resendEmailId: string,
+    participantAddress: string,
+    parentInternetMessageId: string,
+  ) {
+    if (!this.client) {
+      throw new Error('Not connected');
+    }
+    await this.client.query(
+      `WITH conversation AS (
+         INSERT INTO email_conversations
+           (title, subject, participant_address, last_message_at, updated_at)
+         VALUES ('Waiting reply', 'Waiting reply', $2, now(), now())
+         RETURNING id
+       )
+       INSERT INTO email_messages
+         (conversation_id, direction, state, resend_email_id,
+          internet_message_id, in_reply_to_internet_message_id,
+          reference_internet_message_ids, from_address, to_address, subject,
+          text_body, email_created_at, updated_at)
+       SELECT id, 'INBOUND', 'RECEIVED', $1, '<waiting-child@example.com>', $3,
+              ARRAY[$3], $2, 'mailbox@example.com', 'Re: Waiting reply',
+              'Waiting child', now(), now()
+       FROM conversation`,
+      [resendEmailId, participantAddress, parentInternetMessageId],
+    );
+  }
+
   async close() {
     if (this.client) {
       await this.client.end();

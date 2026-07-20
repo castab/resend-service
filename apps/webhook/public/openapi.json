@@ -275,22 +275,6 @@
           "created_at": {
             "$ref": "#/components/schemas/Timestamp"
           },
-          "message_id": {
-            "type": "string",
-            "description": "RFC Message-ID supplied for inbound email.received events."
-          },
-          "cc": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "bcc": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "received_for": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
           "data": {
             "$ref": "#/components/schemas/EmailEventData"
           }
@@ -335,6 +319,22 @@
           },
           "created_at": {
             "$ref": "#/components/schemas/Timestamp"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "RFC Message-ID supplied for inbound email.received events."
+          },
+          "cc": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "bcc": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "received_for": {
+            "type": "array",
+            "items": { "type": "string" }
           },
           "broadcast_id": {
             "type": "string"

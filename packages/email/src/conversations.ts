@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { EmailConversation, EmailMessage } from '@resend-service/database';
 import { Prisma, type PrismaClient } from '@resend-service/database';
-import type { ResendEmail } from './resend-client';
+import type { ResendEmail, ResendEmailClient } from './resend-client';
 import {
   extractMessageIds,
   getHeader,
@@ -23,6 +23,191 @@ export interface MessageContent {
 
 export function hashSendRequest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+const MAX_OUTBOUND_HYDRATION_CANDIDATES = 10;
+const OUTBOUND_HYDRATION_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export async function hydrateReferencedOutboundMessages(
+  client: PrismaClient,
+  resend: ResendEmailClient,
+  participantAddress: string,
+  internetMessageIds: string[],
+  preferredInternetMessageId?: string,
+): Promise<void> {
+  const ancestry = [...new Set(internetMessageIds)].filter(Boolean);
+  if (!ancestry.length) {
+    return;
+  }
+
+  const knownMessage = await client.emailMessage.findFirst({
+    where: {
+      internetMessageId: preferredInternetMessageId
+        ? preferredInternetMessageId
+        : { in: ancestry },
+      conversation: {
+        is: {
+          participantAddress: {
+            equals: participantAddress,
+            mode: 'insensitive',
+          },
+        },
+      },
+    },
+  });
+  if (knownMessage) {
+    return;
+  }
+
+  const candidates = await client.emailMessage.findMany({
+    where: {
+      direction: 'OUTBOUND',
+      state: 'ACCEPTED',
+      resendEmailId: { not: null },
+      internetMessageId: null,
+      conversation: {
+        is: {
+          participantAddress: {
+            equals: participantAddress,
+            mode: 'insensitive',
+          },
+        },
+      },
+    },
+    orderBy: [{ emailCreatedAt: 'desc' }, { id: 'desc' }],
+    take: MAX_OUTBOUND_HYDRATION_CANDIDATES + 1,
+  });
+  if (!candidates.length) {
+    return;
+  }
+
+  const limitedCandidates = candidates.slice(
+    0,
+    MAX_OUTBOUND_HYDRATION_CANDIDATES,
+  );
+  const retrieved = await Promise.allSettled(
+    limitedCandidates.map((message) =>
+      resend.getSent(message.resendEmailId as string),
+    ),
+  );
+  let matched = false;
+  let recentRetrievalFailed = false;
+  const retryCutoff = Date.now() - OUTBOUND_HYDRATION_RETRY_WINDOW_MS;
+
+  for (const [index, result] of retrieved.entries()) {
+    if (result.status === 'rejected') {
+      recentRetrievalFailed ||=
+        limitedCandidates[index].emailCreatedAt.getTime() >= retryCutoff;
+      continue;
+    }
+
+    const message = limitedCandidates[index];
+    await recordOutboundInternetMessageId(
+      client,
+      message.id,
+      result.value.message_id,
+      new Date(result.value.created_at),
+    );
+    matched ||= ancestry.includes(result.value.message_id);
+  }
+
+  if (
+    !matched &&
+    (recentRetrievalFailed ||
+      (candidates.length > MAX_OUTBOUND_HYDRATION_CANDIDATES &&
+        candidates[
+          MAX_OUTBOUND_HYDRATION_CANDIDATES
+        ].emailCreatedAt.getTime() >= retryCutoff))
+  ) {
+    throw new Error('Outbound threading metadata could not be fully hydrated');
+  }
+}
+
+export async function recordOutboundInternetMessageId(
+  client: PrismaClient,
+  messageId: string,
+  internetMessageId: string,
+  emailCreatedAt?: Date,
+): Promise<EmailMessage> {
+  return client.$transaction(
+    async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${internetMessageId}))::text
+      `;
+      const outbound = await transaction.emailMessage.findUniqueOrThrow({
+        where: { id: messageId },
+        include: { conversation: true },
+      });
+      if (outbound.direction !== 'OUTBOUND') {
+        throw new Error('Cannot record sent metadata on an inbound message');
+      }
+
+      const updated = await transaction.emailMessage.update({
+        where: { id: outbound.id },
+        data: {
+          internetMessageId,
+          ...(emailCreatedAt ? { emailCreatedAt } : {}),
+        },
+      });
+      const waitingChildren = await transaction.emailMessage.findMany({
+        where: {
+          parentMessageId: null,
+          inReplyToInternetMessageId: internetMessageId,
+        },
+        include: { conversation: true },
+      });
+      const eligibleChildren = waitingChildren.filter(
+        (child) =>
+          child.conversation.participantAddress.toLowerCase() ===
+          outbound.conversation.participantAddress.toLowerCase(),
+      );
+      const unassignedConversationIds = [
+        ...new Set(
+          eligibleChildren
+            .filter(
+              (child) =>
+                child.conversationId !== outbound.conversationId &&
+                child.conversation.topicType === null,
+            )
+            .map((child) => child.conversationId),
+        ),
+      ];
+
+      if (unassignedConversationIds.length) {
+        await transaction.emailMessage.updateMany({
+          where: { conversationId: { in: unassignedConversationIds } },
+          data: { conversationId: outbound.conversationId },
+        });
+      }
+      await transaction.emailMessage.updateMany({
+        where: {
+          id: { in: eligibleChildren.map((child) => child.id) },
+          conversationId: outbound.conversationId,
+          parentMessageId: null,
+        },
+        data: { parentMessageId: outbound.id },
+      });
+      if (unassignedConversationIds.length) {
+        await transaction.emailConversation.deleteMany({
+          where: { id: { in: unassignedConversationIds } },
+        });
+      }
+
+      const latest = await transaction.emailMessage.aggregate({
+        where: { conversationId: outbound.conversationId },
+        _max: { emailCreatedAt: true },
+      });
+      if (latest._max.emailCreatedAt) {
+        await transaction.emailConversation.update({
+          where: { id: outbound.conversationId },
+          data: { lastMessageAt: latest._max.emailCreatedAt },
+        });
+      }
+
+      return updated;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }
 
 export async function projectInboundEmail(
