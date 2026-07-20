@@ -1,97 +1,68 @@
-# Agent Guide
+# Repository Rules
 
-## Repository Scope
+## Application Boundaries
 
-- This is an npm-workspaces monorepo with two deployable applications and two
-  shared server packages.
-- `apps/webhook` is public ingress. `apps/conversation-api` is private Railway
-  API traffic only.
-- `packages/database` owns all database schema and client generation.
-- `packages/email` owns shared email types, Resend access, threading, and
-  projection logic.
-- Do not document proposed behavior as live. Update documentation in the same
-  change that makes behavior live.
+- This repository contains one deployable Next.js application.
+- Keep API routes under `src/app/api` and provider-neutral email behavior under
+  `src/lib/email`.
+- Keep Prisma access and generated-client exports under `src/lib/database`.
+- Use the API gateway to control external route exposure; do not weaken
+  application-layer authentication based on network placement.
+- Keep `GET /api/health/v1` unauthenticated for readiness checks and return only
+  aggregate status.
 
-## Technology
+## Webhook Ingress
 
-- Use Node.js 22 or newer and npm. Keep the root `package-lock.json` current.
-- Both applications use Next.js App Router and TypeScript.
-- Use Prisma with the PostgreSQL driver adapter and PostgreSQL 18 or newer.
-- Use Svix only in the webhook application.
-- Follow the root Biome configuration.
+- Keep the route exactly `POST /api/webhooks/resend/v1`.
+- Verify the exact raw request body before JSON transformation.
+- Require `svix-id`, `svix-timestamp`, and `svix-signature`.
+- Keep duplicate deliveries idempotent through the database `svix_id`
+  constraints and acknowledge completed duplicates with `200`.
+- Return `500` when required inbound retrieval or projection fails so Resend can
+  retry. Do not acknowledge incomplete projection work.
+- Do not fetch attachments.
 
-## Boundaries
+## Conversation API
 
-- Do not import source code across app directories. Move shared behavior into a
-  specifically named package.
-- Do not import database runtime code into browser components.
-- Keep webhook verification and HTTP mapping in `apps/webhook`.
-- Keep private API authentication and route validation in
-  `apps/conversation-api`.
-- Keep provider-neutral RFC threading behavior in `packages/email`.
+- Require bearer authentication on every conversation operation.
+- Require the dedicated drain credential on the outbox drain operation.
+- Require `Idempotency-Key` on every operation that can send or enqueue email.
+- Persist send intent before calling Resend and never add unbounded retries.
+- Use only the server-configured `RESEND_FROM`; callers cannot choose senders.
+- Preserve one conversation per `(topicType, externalTopicId)` and one external
+  participant per conversation.
+- An explicit reply parent must belong to the conversation. Otherwise use the
+  latest accepted or received message.
+- Never send a reply without a parent RFC Message-ID.
+- Build `References` from the selected parent's ancestry.
+- Treat stored and returned HTML as untrusted.
+- Preserve fixed ordered outbox batch membership, bounded batch size, retry
+  backoff, and the provider idempotency safety window.
 
-## API Convention
+## Database
 
-- Use `/api/{capability}/{integration?}/v{major}`.
-- The public webhook route is exactly `POST /api/webhooks/resend/v1`.
-- Conversation routes use `/api/conversations/v1`.
-- Do not restore `/api/webhooks/v1/resend` without explicit direction.
-- Each application owns a complete OpenAPI contract in its `public` directory.
-- Every live route change must update that application's contract and tests.
-- Run `npm run api:validate` after API changes.
+- Treat `prisma/schema.prisma` and checked-in migrations as authoritative.
+- Add migrations; never edit deployed migration history.
+- Preserve UUIDv7 primary keys and all webhook, message, and outbox idempotency
+  constraints.
+- Never edit or commit `src/generated/prisma`.
+- Run `npm run db:validate` and `npm run db:generate` after schema changes.
+- Treat all email-related columns as sensitive and avoid logging values.
 
-## Database Rules
+## Email Behavior
 
-- Treat `packages/database/prisma/schema.prisma` and checked-in migrations as
-  authoritative.
-- Add migrations; never rewrite migrations that may have been deployed.
-- Use additive, expand/contract changes because Railway services deploy
-  independently.
-- Run `npm run db:generate` after schema changes.
-- Never edit or commit `packages/database/src/generated/prisma`.
-- Preserve webhook and send idempotency constraints.
-- Treat addresses, subjects, bodies, headers, and delivery metadata as
-  sensitive.
+- Keep RFC Message-ID parsing provider-neutral.
+- Preserve ordered References ancestry and selected-parent semantics.
+- Expect missing, malformed, duplicated, and out-of-order webhook metadata.
+- Keep projection idempotent by Resend email ID and RFC Message-ID.
+- Never infer thread membership from subject alone when RFC ancestry exists.
+- Keep Resend calls bounded with an abort timeout.
+- Do not log message bodies, addresses, subjects, headers, or credentials.
 
-## Deployment
+## Contracts And Tests
 
-- Keep both Dockerfiles and app-specific Railway configs aligned with workspace
-  scripts.
-- Keep the repository root as Docker and Railway build context.
-- Both production images must retain Prisma CLI, schema, and migrations for the
-  pre-deploy command.
-- The webhook app may have a public domain. The conversation app must not.
-- Both apps must continue to honor Railway's `PORT` variable.
-
-## Documentation
-
-- Keep the root README architectural and operational.
-- Put app-specific routes, variables, and behavior in the app README.
-- Put schema and generation details in the database package README.
-- Put RFC threading and projection details in the email package README.
-- Nested `AGENTS.md` files add local invariants; do not duplicate or contradict
-  root rules.
-
-## Workflow
-
-- Prefer bounded network calls and test commands. Do not introduce unbounded
-  polling or retries.
-- Keep integration tests isolated from the real Resend API.
-- Do not edit generated `.next`, Prisma client, or `node_modules` output.
-- Do not revert unrelated worktree changes.
-
-## Verification
-
-Run relevant checks with explicit time bounds. For substantial changes run:
-
-```bash
-npm run db:validate
-npm run api:validate
-npm run lint
-npm run build
-npm run test:postgresql
-git diff --check
-```
-
-The PostgreSQL suite requires both applications, PostgreSQL, and the test
-environment described in the root README.
+- Keep `public/openapi.json` aligned with every route or behavior change.
+- Preserve explicit webhook and outbox-drain security overrides in OpenAPI.
+- Integration tests require a dedicated disposable `TEST_DATABASE_URL` and
+  truncate application tables.
+- Keep test files serial while they share PostgreSQL and the fake Resend server.

@@ -1,39 +1,40 @@
 {
-  "name": "resend-service-monorepo",
+  "name": "resend-service",
   "version": "1.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "packageManager": "npm@11.18.0",
   "engines": {
     "node": ">=22",
     "npm": ">=10"
   },
   "scripts": {
-    "api:validate": "npm run api:validate:webhook && npm run api:validate:conversation",
-    "api:validate:webhook": "redocly lint apps/webhook/public/openapi.json",
-    "api:validate:conversation": "redocly lint apps/conversation-api/public/openapi.json",
-    "dev:webhook": "npm run dev --workspace @resend-service/webhook",
-    "dev:webhook:test": "dotenv -e .env.test -- npm run dev --workspace @resend-service/webhook",
-    "dev:conversation": "npm run dev --workspace @resend-service/conversation-api",
-    "dev:conversation:test": "dotenv -e .env.test -- npm run dev --workspace @resend-service/conversation-api",
-    "build": "npm run db:generate && npm run build:webhook && npm run build:conversation",
-    "build:webhook": "npm run build --workspace @resend-service/webhook",
-    "build:conversation": "npm run build --workspace @resend-service/conversation-api",
-    "start:webhook": "npm run start --workspace @resend-service/webhook",
-    "start:conversation": "npm run start --workspace @resend-service/conversation-api",
+    "api:validate": "redocly lint public/openapi.json",
+    "dev": "next dev --webpack",
+    "dev:test": "dotenv -e .env.test -- next dev --webpack",
+    "build": "npm run db:generate && next build --webpack",
+    "start": "next start",
     "lint:fix": "biome check . --write",
     "lint": "biome check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:postgresql": "vitest run apps/webhook/tests/integration/postgresql.test.ts apps/conversation-api/tests/integration/postgresql.test.ts",
-    "db:generate": "npm run db:generate --workspace @resend-service/database",
-    "db:migrate:deploy": "npm run db:migrate:deploy --workspace @resend-service/database",
+    "test:postgresql": "vitest run tests/integration/webhook.postgresql.test.ts tests/integration/conversation.postgresql.test.ts",
+    "db:generate": "prisma generate",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:setup": "npm run db:generate && npm run db:migrate:deploy",
-    "db:studio": "dotenv -e .env.test -- npm run db:studio --workspace @resend-service/database",
-    "db:validate": "npm run db:validate --workspace @resend-service/database"
+    "db:studio": "dotenv -e .env.test -- prisma studio",
+    "db:validate": "prisma validate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "dotenv": "17.2.3",
+    "next": "16.1.1",
+    "pg": "8.13.1",
+    "prisma": "7.8.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "svix": "1.67.0",
+    "swagger-ui-react": "5.32.9"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",

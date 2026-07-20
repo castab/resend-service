@@ -13,8 +13,6 @@ if (!testDatabaseUrl) {
 
 export const TEST_CONFIG = {
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
-  conversationBaseUrl:
-    process.env.CONVERSATION_BASE_URL || 'http://localhost:3001',
   conversationApiKey:
     process.env.CONVERSATION_API_KEY || 'test-conversation-api-key',
   outboxDrainApiKey:

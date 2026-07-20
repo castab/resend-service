@@ -4,7 +4,7 @@ node_modules
 # Build outputs
 **/.next
 out
-packages/database/src/generated
+src/generated
 
 # Git
 .git

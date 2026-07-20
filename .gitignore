@@ -22,7 +22,6 @@
 
 # generated Prisma client
 /src/generated/prisma
-/packages/database/src/generated/prisma
 
 # misc
 .DS_Store

@@ -10,31 +10,20 @@ services:
     volumes:
       - postgresql_data:/var/lib/postgresql
 
-  webhook:
+  app:
     profiles: ["apps"]
     build:
       context: .
-      dockerfile: Dockerfile.webhook
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgresql:5432/resend_test
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_API_BASE_URL: ${RESEND_API_BASE_URL:-}
       RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
-    depends_on:
-      - postgresql
-
-  conversation-api:
-    profiles: ["apps"]
-    build:
-      context: .
-      dockerfile: Dockerfile.conversation-api
-    ports:
-      - "3001:3000"
-    environment:
       CONVERSATION_API_KEY: ${CONVERSATION_API_KEY:-}
-      DATABASE_URL: postgresql://postgres:postgres@postgresql:5432/resend_test
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      OUTBOX_DRAIN_API_KEY: ${OUTBOX_DRAIN_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
     depends_on:
       - postgresql

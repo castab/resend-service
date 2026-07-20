@@ -6,7 +6,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    include: ['apps/*/tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     bail: 1,
@@ -14,8 +14,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@webhook': path.resolve(__dirname, './apps/webhook/src'),
-      '@webhook-tests': path.resolve(__dirname, './apps/webhook/tests'),
+      '@': path.resolve(__dirname, './src'),
       '@test-support': path.resolve(__dirname, './tests'),
     },
   },

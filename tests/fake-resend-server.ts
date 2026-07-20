@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ResendEmail, SendEmailInput } from '@resend-service/email';
+import type { ResendEmail, SendEmailInput } from '@/lib/email';
 
 export class FakeResendServer {
   private server: Server | null = null;
