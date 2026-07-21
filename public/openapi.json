@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "resend-service API",
-    "version": "1.1.1",
+    "version": "0.0.1",
     "description": "Receives signed Resend webhooks and provides bearer-authenticated, topic-centered email conversations. The service preserves RFC reply relationships, supports synchronous and transactional-outbox sends, and stores untrusted email content without retrieving attachments.",
     "license": {
       "name": "MIT",

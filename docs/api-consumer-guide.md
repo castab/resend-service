@@ -495,12 +495,13 @@ or, on replay of a failed or indeterminate stored request:
 - Current API version: `v1`
 - Contract file: `public/openapi.json`
 - OpenAPI version: `3.1.1`
-- Contract version observed in repository: `1.1.1`
-- Package version observed in repository: `1.1.0`
-- Backward-compatibility expectations: not formally documented beyond path versioning.
+- Contract/package version observed in repository: `0.0.1`
+- Release notes: `CHANGELOG.md`
+- Docker image tags: `castab/resend-service:<version>`
+- Backward-compatibility expectations: not formally documented beyond path versioning and SemVer release notes.
 - Deprecation process: unresolved; no `deprecated` markers or sunset policy were found.
-- Breaking changes: consumers should monitor `public/openapi.json` and route version changes.
-- Consumer pinning guidance: pin to the checked-in contract version used by your integration and diff future updates before upgrading.
+- Breaking changes: consumers should monitor `public/openapi.json`, changelog entries, and route version changes.
+- Consumer pinning guidance: pin to a specific Docker or contract version and diff future updates before upgrading.
 
 ## Local development
 
