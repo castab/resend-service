@@ -58,7 +58,11 @@ for (const [name, currentVersion] of versions) {
   }
 }
 
-const rawTag = process.argv[2] ?? process.env.GITHUB_REF_NAME;
+const rawTag = process.argv[2]
+  ?? (process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined)
+  ?? (process.env.GITHUB_REF?.startsWith('refs/tags/')
+    ? process.env.GITHUB_REF
+    : undefined);
 
 if (rawTag) {
   const normalizedTag = rawTag.startsWith('refs/tags/')
