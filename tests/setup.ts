@@ -18,6 +18,8 @@ export const TEST_CONFIG = {
   outboxDrainApiKey:
     process.env.OUTBOX_DRAIN_API_KEY || 'test-outbox-drain-api-key',
   resendApiBaseUrl: process.env.RESEND_API_BASE_URL || 'http://localhost:4010',
+  replyToBaseAddress:
+    process.env.RESEND_REPLY_TO || 'mailbox@replies.example.com',
   webhookSecret:
     process.env.RESEND_WEBHOOK_SECRET ||
     'whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ=',

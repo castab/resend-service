@@ -184,7 +184,7 @@ Preconditions:
 Sequence:
 
 1. `POST /api/webhooks/resend/v1` with `svix-id`, `svix-timestamp`, and `svix-signature`.
-2. For `email.received`, the service fetches message content and headers from Resend and projects inbound messages.
+2. For `email.received`, the service fetches message content and headers from Resend and projects inbound messages. Eligible RFC ancestry is authoritative; a conversation token in `to` or `received_for` is a participant-checked fallback.
 
 Expected outcome:
 
@@ -517,6 +517,7 @@ Required environment variables:
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
 - `RESEND_FROM`
+- `RESEND_REPLY_TO`
 - `CONVERSATION_API_KEY`
 - `OUTBOX_DRAIN_API_KEY`
 
@@ -592,7 +593,7 @@ Success response:
       "name": "Mailbox"
     },
     "to": "person@example.com",
-    "replyTo": null,
+    "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
     "subject": "Booking 4821",
     "text": "Your booking request was received.",
     "html": null,

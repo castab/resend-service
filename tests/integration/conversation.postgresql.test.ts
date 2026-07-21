@@ -34,6 +34,10 @@ describe('Private conversation API', () => {
     const created = await createConversation('create-booking-4821');
     expect(created.response.status).toBe(201);
     expect(created.body.message.internetMessageId).toBe('<sent-1@resend.test>');
+    expectRoutingAddress(created.body.message.replyTo);
+    expect(resendServer.sends[0].input.reply_to).toBe(
+      created.body.message.replyTo,
+    );
 
     const replyResponse = await fetch(
       `${baseUrl}/${created.body.conversationId}/messages`,
@@ -46,6 +50,10 @@ describe('Private conversation API', () => {
     const reply = await replyResponse.json();
     expect(replyResponse.status).toBe(201);
     expect(reply.message.parentMessageId).toBe(created.body.message.id);
+    expect(reply.message.replyTo).toBe(created.body.message.replyTo);
+    expect(resendServer.sends[1].input.reply_to).toBe(
+      created.body.message.replyTo,
+    );
     expect(resendServer.sends[1].input.headers).toEqual({
       'In-Reply-To': '<sent-1@resend.test>',
       References: '<sent-1@resend.test>',
@@ -62,6 +70,7 @@ describe('Private conversation API', () => {
       title: 'Booking 4821',
     });
     expect(hydrated.messages).toHaveLength(2);
+    expect(hydrated.replyToAddress).toBe(created.body.message.replyTo);
     expect(hydrated.messages[1].parentMessageId).toBe(hydrated.messages[0].id);
   });
 
@@ -128,6 +137,7 @@ describe('Private conversation API', () => {
     expect(reopenedResponse.status).toBe(201);
     expect(reopened.conversationId).toBe(failed.body.conversationId);
     expect(reopened.message.state).toBe('accepted');
+    expect(reopened.message.replyTo).toBe(failed.body.message.replyTo);
     expect(resendServer.sends).toHaveLength(1);
     expect(resendServer.sends[0].input.to).toEqual(['corrected@example.com']);
 
@@ -172,9 +182,11 @@ describe('Private conversation API', () => {
       direction: 'outbound',
       state: 'pending',
       resendEmailId: null,
+      replyTo: expect.any(String),
       text: 'Opening message',
     });
     expect(resendServer.sends).toHaveLength(0);
+    expectRoutingAddress(queued.body.message.replyTo);
     const { rows } = await database.query(
       `SELECT message.state, entry.message_id
        FROM email_outbox_entries AS entry
@@ -242,6 +254,9 @@ describe('Private conversation API', () => {
       'person@example.com',
       'person@example.com',
     ]);
+    expect(
+      resendServer.batches[0].inputs.map(({ reply_to }) => reply_to),
+    ).toEqual([first.body.message.replyTo, second.body.message.replyTo]);
     const { rows } = await database.query(
       `SELECT state, resend_email_id
        FROM email_messages
@@ -284,6 +299,9 @@ describe('Private conversation API', () => {
       'In-Reply-To': '<sent-1@resend.test>',
       References: '<sent-1@resend.test>',
     });
+    expect(resendServer.batches[0].inputs[0].reply_to).toBe(
+      created.body.message.replyTo,
+    );
   });
 
   it('retries the exact batch after acceptance followed by disconnect', async () => {
@@ -520,6 +538,17 @@ function drainHeaders(): Record<string, string> {
     authorization: `Bearer ${TEST_CONFIG.outboxDrainApiKey}`,
     'content-type': 'application/json',
   };
+}
+
+function expectRoutingAddress(value: string) {
+  const [local, domain] = TEST_CONFIG.replyToBaseAddress.split('@');
+  const escapeRegex = (part: string) =>
+    part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  expect(value).toMatch(
+    new RegExp(
+      `^${escapeRegex(local)}\\+c_[0-9a-f]{32}@${escapeRegex(domain)}$`,
+    ),
+  );
 }
 
 function createBody(title = 'Booking 4821') {

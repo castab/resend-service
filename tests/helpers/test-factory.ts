@@ -1,6 +1,7 @@
 import { FakeResendServer } from '@test-support/fake-resend-server';
 import { TEST_CONFIG } from '@test-support/setup';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { buildConversationReplyTo } from '@/lib/email';
 import { fixtures } from './fixtures';
 import { generateSvixId, signPayload } from './svix';
 
@@ -21,6 +22,9 @@ export interface TestDbClient {
   truncateConversations(): Promise<void>;
   findEmailMessageByResendId(resendEmailId: string): Promise<unknown>;
   getThreadState(childResendEmailId: string): Promise<unknown>;
+  createRoutedConversation(
+    participantAddress: string,
+  ): Promise<{ routingToken: string }>;
   createOutboundWithoutInternetMessageId(
     resendEmailId: string,
     participantAddress: string,
@@ -339,6 +343,220 @@ export function createWebhookTests(createClient: () => TestDbClient) {
         ).toMatchObject({
           conversation_count: 2,
           parent_internet_message_id: null,
+        });
+      });
+
+      it('routes ancestry-free replies from to and received_for', async () => {
+        const participantAddress = 'routed@example.com';
+        const { routingToken } =
+          await dbClient.createRoutedConversation(participantAddress);
+        const replyTo = buildConversationReplyTo(
+          TEST_CONFIG.replyToBaseAddress,
+          routingToken,
+        );
+        const validEvent = fixtures.email.received({
+          data: {
+            email_id: 'em_forwarded_participant',
+            message_id: '<forwarded-participant@example.com>',
+            from: participantAddress,
+            to: ['forwarder@example.net'],
+            received_for: [replyTo],
+            subject: 'Forwarded response',
+            created_at: '2026-07-19T04:03:00.000Z',
+          },
+        });
+        resendServer.received.set(validEvent.data.email_id, {
+          id: validEvent.data.email_id,
+          message_id: validEvent.data.message_id as string,
+          from: validEvent.data.from,
+          to: validEvent.data.to,
+          received_for: [replyTo],
+          subject: validEvent.data.subject,
+          created_at: validEvent.data.created_at,
+          text: 'Forwarded participant response',
+          html: null,
+          headers: {},
+          reply_to: [],
+        });
+        const validSigned = signPayload(
+          TEST_CONFIG.webhookSecret,
+          validEvent,
+          generateSvixId(),
+        );
+        expect(
+          (
+            await fetch(endpoint, {
+              method: 'POST',
+              headers: validSigned.headers,
+              body: validSigned.body,
+            })
+          ).status,
+        ).toBe(200);
+        expect(
+          await dbClient.getThreadState(validEvent.data.email_id),
+        ).toMatchObject({
+          conversation_count: 1,
+          parent_internet_message_id: null,
+        });
+
+        const event = fixtures.email.received({
+          data: {
+            email_id: 'em_routed_reply',
+            message_id: '<routed-reply@example.com>',
+            from: participantAddress,
+            to: [replyTo],
+            subject: 'Re: Routed message',
+            created_at: '2026-07-19T04:03:00.000Z',
+          },
+        });
+        resendServer.received.set(event.data.email_id, {
+          id: event.data.email_id,
+          message_id: event.data.message_id as string,
+          from: participantAddress,
+          to: [replyTo],
+          subject: event.data.subject,
+          created_at: event.data.created_at,
+          text: 'Header-free reply',
+          html: null,
+          headers: {},
+          reply_to: [],
+        });
+
+        const signed = signPayload(
+          TEST_CONFIG.webhookSecret,
+          event,
+          generateSvixId(),
+        );
+        expect(
+          (
+            await fetch(endpoint, {
+              method: 'POST',
+              headers: signed.headers,
+              body: signed.body,
+            })
+          ).status,
+        ).toBe(200);
+        expect(
+          await dbClient.getThreadState(event.data.email_id),
+        ).toMatchObject({
+          conversation_count: 1,
+          parent_internet_message_id: null,
+        });
+      });
+
+      it('rejects a routing token from a different participant', async () => {
+        const participantAddress = 'forwarded@example.com';
+        const { routingToken } =
+          await dbClient.createRoutedConversation(participantAddress);
+        const replyTo = buildConversationReplyTo(
+          TEST_CONFIG.replyToBaseAddress,
+          routingToken,
+        );
+        const event = fixtures.email.received({
+          data: {
+            email_id: 'em_forwarded_intruder',
+            message_id: '<forwarded-intruder@example.com>',
+            from: 'intruder@example.com',
+            to: ['forwarder@example.net'],
+            received_for: [replyTo],
+            subject: 'Forwarded response',
+            created_at: '2026-07-19T04:04:00.000Z',
+          },
+        });
+        resendServer.received.set(event.data.email_id, {
+          id: event.data.email_id,
+          message_id: event.data.message_id as string,
+          from: event.data.from,
+          to: event.data.to,
+          received_for: [replyTo],
+          subject: event.data.subject,
+          created_at: event.data.created_at,
+          text: 'Different sender',
+          html: null,
+          headers: {},
+          reply_to: [],
+        });
+
+        const signed = signPayload(
+          TEST_CONFIG.webhookSecret,
+          event,
+          generateSvixId(),
+        );
+        expect(
+          (
+            await fetch(endpoint, {
+              method: 'POST',
+              headers: signed.headers,
+              body: signed.body,
+            })
+          ).status,
+        ).toBe(200);
+        expect(
+          await dbClient.getThreadState(event.data.email_id),
+        ).toMatchObject({
+          conversation_count: 2,
+          parent_internet_message_id: null,
+        });
+      });
+
+      it('prefers eligible RFC ancestry over a different routing token', async () => {
+        const participantAddress = 'conflict@example.com';
+        const { routingToken } =
+          await dbClient.createRoutedConversation(participantAddress);
+        await dbClient.createOutboundWithoutInternetMessageId(
+          'rfc-conflict-parent',
+          participantAddress,
+        );
+        const knownParent = '<known-rfc-conflict-parent@resend.test>';
+        const replyTo = buildConversationReplyTo(
+          TEST_CONFIG.replyToBaseAddress,
+          routingToken,
+        );
+        const event = fixtures.email.received({
+          data: {
+            email_id: 'em_routing_conflict',
+            message_id: '<routing-conflict@example.com>',
+            from: participantAddress,
+            to: [replyTo],
+            subject: 'Re: Threaded message',
+            created_at: '2026-07-19T04:05:00.000Z',
+          },
+        });
+        resendServer.received.set(event.data.email_id, {
+          id: event.data.email_id,
+          message_id: event.data.message_id as string,
+          from: participantAddress,
+          to: [replyTo],
+          subject: event.data.subject,
+          created_at: event.data.created_at,
+          text: 'Conflicting route signals',
+          html: null,
+          headers: {
+            'in-reply-to': knownParent,
+            references: knownParent,
+          },
+          reply_to: [],
+        });
+
+        const signed = signPayload(
+          TEST_CONFIG.webhookSecret,
+          event,
+          generateSvixId(),
+        );
+        expect(
+          (
+            await fetch(endpoint, {
+              method: 'POST',
+              headers: signed.headers,
+              body: signed.body,
+            })
+          ).status,
+        ).toBe(200);
+        expect(
+          await dbClient.getThreadState(event.data.email_id),
+        ).toMatchObject({
+          conversation_count: 2,
+          parent_internet_message_id: knownParent,
         });
       });
 

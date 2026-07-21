@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { EmailConversation, EmailMessage } from '@/lib/database';
 import { Prisma, type PrismaClient } from '@/lib/database';
 import type { ResendEmail, ResendEmailClient } from './resend-client';
+import { extractRoutingTokens } from './routing';
 import {
   extractMessageIds,
   getHeader,
@@ -214,6 +215,7 @@ export async function projectInboundEmail(
   client: PrismaClient,
   eventData: EmailEventData,
   email: ResendEmail,
+  replyToBaseAddress: string,
 ): Promise<EmailMessage> {
   const internetMessageId = eventData.message_id ?? email.message_id;
   const inReplyTo = extractMessageIds(
@@ -237,6 +239,15 @@ export async function projectInboundEmail(
   const participant = parseAddress(eventData.from || email.from);
   const emailCreatedAt = new Date(email.created_at || eventData.created_at);
   const participantAddress = participant.address.toLowerCase();
+  const routingTokens = extractRoutingTokens(
+    [
+      ...email.to,
+      ...eventData.to,
+      ...(email.received_for ?? []),
+      ...(eventData.received_for ?? []),
+    ],
+    replyToBaseAddress,
+  );
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -322,6 +333,22 @@ export async function projectInboundEmail(
             parentConversation ??
             ancestorConversation ??
             waitingConversation;
+          if (!conversation && routingTokens.length) {
+            const routedConversations =
+              await transaction.emailConversation.findMany({
+                where: {
+                  routingToken: { in: routingTokens },
+                },
+                take: 2,
+              });
+            if (
+              routedConversations.length === 1 &&
+              routedConversations[0].participantAddress.toLowerCase() ===
+                participantAddress
+            ) {
+              conversation = routedConversations[0];
+            }
+          }
           conversation ??= await transaction.emailConversation.create({
             data: {
               title: normalizeSubject(email.subject),

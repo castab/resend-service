@@ -178,6 +178,9 @@ export function buildSendEmailInput(message: EmailMessage): SendEmailInput {
   return {
     from: formatAddress(message.fromAddress, message.fromName),
     to: [message.toAddress],
+    ...(message.replyToAddress === null
+      ? {}
+      : { reply_to: message.replyToAddress }),
     subject: message.subject,
     ...(message.textBody === null ? {} : { text: message.textBody }),
     ...(message.htmlBody === null ? {} : { html: message.htmlBody }),

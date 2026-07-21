@@ -60,6 +60,7 @@ jobs:
           RESEND_API_KEY: test-resend-api-key
           RESEND_API_BASE_URL: http://localhost:4010
           RESEND_FROM: "Test Mailbox <mailbox@example.com>"
+          RESEND_REPLY_TO: mailbox@replies.example.com
           CONVERSATION_API_KEY: test-conversation-api-key
           OUTBOX_DRAIN_API_KEY: test-outbox-drain-api-key
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/resend_test
@@ -79,6 +80,7 @@ jobs:
           RESEND_API_KEY: test-resend-api-key
           RESEND_API_BASE_URL: http://localhost:4010
           RESEND_FROM: "Test Mailbox <mailbox@example.com>"
+          RESEND_REPLY_TO: mailbox@replies.example.com
           CONVERSATION_API_KEY: test-conversation-api-key
           OUTBOX_DRAIN_API_KEY: test-outbox-drain-api-key
           APP_BASE_URL: http://localhost:3000
@@ -99,6 +101,7 @@ jobs:
             -e RESEND_API_KEY=test-resend-api-key \
             -e RESEND_WEBHOOK_SECRET=whsec_dGVzdF9zZWNyZXRfa2V5X2Zvcl90ZXN0aW5nXzEyMzQ= \
             -e RESEND_FROM="Test Mailbox <mailbox@example.com>" \
+            -e RESEND_REPLY_TO=mailbox@replies.example.com \
             -e CONVERSATION_API_KEY=test-conversation-api-key \
             -e OUTBOX_DRAIN_API_KEY=test-outbox-drain-api-key \
             resend-service:test

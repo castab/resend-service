@@ -9,9 +9,11 @@ import {
 import { ensureInternetMessageId } from '@/lib/conversation-service';
 import { getPrismaClient, Prisma } from '@/lib/database';
 import {
+  buildConversationReplyTo,
   buildReferences,
   createReplySubject,
   hashSendRequest,
+  isValidReplyToBaseAddress,
   parseAddress,
 } from '@/lib/email';
 import { validateMessageBody } from '@/lib/send-validation';
@@ -118,13 +120,22 @@ export async function POST(
   }
 
   const configuredFrom = process.env.RESEND_FROM;
-  if (!configuredFrom) {
+  const configuredReplyTo = process.env.RESEND_REPLY_TO;
+  if (
+    !configuredFrom ||
+    !configuredReplyTo ||
+    !isValidReplyToBaseAddress(configuredReplyTo)
+  ) {
     return NextResponse.json(
       { error: 'Server misconfiguration' },
       { status: 500 },
     );
   }
   const from = parseAddress(configuredFrom);
+  const replyToAddress = buildConversationReplyTo(
+    configuredReplyTo,
+    conversation.routingToken,
+  );
   const references = buildReferences(
     parent.referenceInternetMessageIds,
     parentInternetMessageId,
@@ -144,6 +155,7 @@ export async function POST(
           fromAddress: from.address,
           fromName: from.name,
           toAddress: conversation.participantAddress,
+          replyToAddress,
           subject: createReplySubject(conversation.subject),
           textBody: validation.value.text,
           htmlBody: validation.value.html,

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/database';
+import { isValidReplyToBaseAddress } from '@/lib/email';
 
 export async function GET(request: Request) {
   if (new URL(request.url).search) {
@@ -13,6 +14,8 @@ export async function GET(request: Request) {
     !process.env.RESEND_API_KEY ||
     !process.env.RESEND_WEBHOOK_SECRET ||
     !process.env.RESEND_FROM ||
+    !process.env.RESEND_REPLY_TO ||
+    !isValidReplyToBaseAddress(process.env.RESEND_REPLY_TO) ||
     !process.env.CONVERSATION_API_KEY ||
     !process.env.OUTBOX_DRAIN_API_KEY
   ) {
