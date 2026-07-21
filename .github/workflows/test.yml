@@ -2,9 +2,13 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -47,6 +51,7 @@ jobs:
 
       - name: Validate
         run: |
+          npm run release:validate
           npm run db:validate
           npm run api:validate
           npm run lint

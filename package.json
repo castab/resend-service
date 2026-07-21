@@ -1,6 +1,6 @@
 {
   "name": "resend-service",
-  "version": "1.1.0",
+  "version": "0.0.1",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {
@@ -12,6 +12,7 @@
     "dev": "next dev --webpack",
     "dev:test": "dotenv -e .env.test -- next dev --webpack",
     "build": "npm run db:generate && next build --webpack",
+    "release:validate": "node scripts/validate-release-version.mjs",
     "start": "next start",
     "lint:fix": "biome check . --write",
     "lint": "biome check .",

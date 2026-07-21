@@ -196,6 +196,36 @@ docker run --rm -p 3000:3000 --env-file .env resend-service
 The image contains Prisma migration tooling, schema, migrations, public assets,
 and the standalone Next.js server.
 
+Published releases are also available on Docker Hub as
+`castab/resend-service`.
+
+```bash
+docker pull castab/resend-service:0.0.1
+docker run --rm -e DATABASE_URL="$DATABASE_URL" castab/resend-service:0.0.1 npm run db:migrate:deploy
+docker run --rm -p 3000:3000 --env-file .env castab/resend-service:0.0.1
+```
+
+Stable releases publish one immutable exact tag, plus moving convenience tags:
+
+- `x.y.z`
+- `x.y`
+- `x`
+- `latest`
+
+Run migrations before starting a newly pulled image. Docker Hub publication is
+currently limited to `linux/amd64` images.
+
+## Releases
+
+- Repository metadata, OpenAPI metadata, and consumer documentation use the
+  same SemVer value.
+- `CHANGELOG.md` is the source of release notes.
+- Release pull requests prepare the version bump and changelog entry.
+- After the release PR merges to `main`, push the matching annotated `vX.Y.Z`
+  tag to publish Docker images.
+
+Detailed release steps live in `docs/releasing.md`.
+
 ## Railway
 
 Create one service from this repository and use `/railway.json`. Configure all
@@ -214,6 +244,7 @@ poll internally.
 ## Verification
 
 ```bash
+npm run release:validate
 npm run db:validate
 npm run api:validate
 npm run lint
