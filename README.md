@@ -1,5 +1,7 @@
 # resend-service
 
+[![Docker Hub](https://img.shields.io/docker/pulls/castab/resend-service?label=Docker%20Hub)](https://hub.docker.com/r/castab/resend-service) [![Docker Image Version](https://img.shields.io/docker/v/castab/resend-service?sort=semver&label=version)](https://hub.docker.com/r/castab/resend-service/tags)
+
 `resend-service` is one PostgreSQL-backed Next.js application for receiving
 Resend webhooks and managing topic-centered email conversations. An external
 API gateway controls which paths are publicly reachable; authentication and
