@@ -4,6 +4,8 @@
 
 - Contract: `public/openapi.json`
 - Consumer guide: `docs/api-consumer-guide.md`
+- OpenCode skill: `.opencode/skills/api-integration-package/SKILL.md`
+- OpenCode command: `.opencode/commands/update-api-integration.md`
 
 ## Service purpose
 
@@ -40,6 +42,8 @@ This service is the source of truth for topic-centered email conversations, outb
 10. Eligible RFC ancestry wins over address-token routing. Tokens are used only as a fallback and still require the conversation participant's sender address.
 11. Returned HTML is untrusted and must be sanitized before rendering.
 12. `accepted` means provider API acceptance, not final delivery.
+13. `403` does not occur in the current implementation; invalid scoped credentials return `401`.
+14. Drain responses can report failure or retry work with `200`, but current batch finalization is normally uniform across all items in one response.
 
 ## Retry and idempotency rules
 
@@ -48,10 +52,12 @@ This service is the source of truth for topic-centered email conversations, outb
 - Drain is safe to invoke repeatedly; server-side batching and provider idempotency handle duplicates.
 - Webhook deliveries are at-least-once; duplicates are expected.
 - `503` on reply send/enqueue means parent threading metadata retrieval failed; retry later.
+- Observed outbox retry cadence is 1 minute, 2 minutes, then 5 minutes, with a 23-hour provider idempotency safety window.
 
 ## Validation commands
 
 ```bash
+npm run db:validate
 npm run api:validate
 npm run lint
 npm run build
@@ -65,13 +71,17 @@ npm run dev:test
 npm run test:postgresql
 ```
 
+`db:setup` reads `.env`, while `dev:test` loads `.env.test`; make sure the disposable test database configuration is available to both.
+
 ## Known unresolved issues
 
 - External gateway exposure rules are not present in the repository.
-- Runtime request handling is more permissive than the contract in some places, especially query `limit` parsing and ignored unknown fields.
+- Runtime request handling is more permissive than the contract in some places, especially query `limit` parsing.
+- Unknown request object properties are allowed by both the contract and the implementation, and they do not affect idempotency comparison.
 - Topic lookup does not enforce the documented `externalTopicId` max length.
 - Webhook runtime validation is prefix-based rather than full schema validation.
 - Some uncaught infrastructure failures may not return the documented JSON error body.
 - No formal deprecation or compatibility policy exists beyond `v1` routing.
+- Locked tooling currently needs Node `22.12+` in practice, although `package.json` still says `>=22`.
 
 See `docs/api-consumer-guide.md` for workflow details, error semantics, local setup, and examples.

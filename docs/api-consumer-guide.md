@@ -248,6 +248,7 @@ The machine-readable contract in `public/openapi.json` is authoritative for fiel
 
 - There is no auth bypass in development.
 - Local runs still require configured credentials in the environment.
+- `403` does not occur in the current application implementation. Valid shared credentials authorize every operation within their scope; invalid credentials return `401`.
 
 ## Request conventions
 
@@ -270,10 +271,13 @@ The machine-readable contract in `public/openapi.json` is authoritative for fiel
   - Bearer scheme matching is case-insensitive.
   - Message IDs and topic external IDs should be treated as exact strings.
 - Validation rules not obvious from schema alone:
+  - `participant.email` is limited to 320 characters by runtime validation.
   - Topic titles, participant names, and subjects reject ASCII control characters.
+  - Topic titles must contain at least one non-whitespace character after trimming.
   - Message `text` and `html` must be nonempty strings when present.
   - Blank optional `participant.name` becomes `null`.
   - Blank optional `subject` is omitted and defaults to the normalized topic title.
+  - String length checks use JavaScript string length, including the 1 MiB body limit and the 255/256-character header-field limits.
   - Subject normalization strips leading `Re:`, `Fw:`, and `Fwd:` prefixes case-insensitively.
 
 ## Response conventions
@@ -309,7 +313,8 @@ The machine-readable contract in `public/openapi.json` is authoritative for fiel
   - Unassigned list returns an empty `conversations` array.
   - Conversation reads return `404`, not an empty object, when missing.
 - Partial success:
-  - Drain responses are aggregate results for a batch and may include a mix of accepted, failed, pending-with-retry, or indeterminate outcomes while still returning `200`.
+  - Drain responses are aggregate results for a batch and may report failed, retried, or indeterminate work while still returning `200`.
+  - The current implementation normally finalizes an entire batch uniformly, so mixed per-item outcomes in one response should not be treated as a stable expectation.
 
 ## Error semantics
 
@@ -341,6 +346,7 @@ Common observed `error` values:
 - Causes: missing or invalid bearer token; invalid webhook signature.
 - Retry: only with corrected credentials or regenerated signature.
 - End-user safe: do not expose raw secrets; a generic unauthorized message is safe.
+- There is no separate authorization failure status in the current implementation; scoped shared credentials either pass or return `401`.
 
 ### `404 Not Found`
 
@@ -425,6 +431,7 @@ or, on replay of a failed or indeterminate stored request:
 - Backoff expectations:
   - No client backoff policy is published.
   - Outbox retries are server-managed, not client-managed.
+  - Observed implementation behavior: the outbox uses a 2-minute lease, then retries after 1 minute, 2 minutes, and 5 minutes, bounded by a 23-hour provider idempotency safety window.
 - Idempotency-key support:
   - Required on every operation that creates or enqueues an outbound message.
   - Keys are retained indefinitely.
@@ -464,6 +471,8 @@ or, on replay of a failed or indeterminate stored request:
 - Read-after-write:
   - Usually immediate for committed state.
   - Conversation ordering can later change when the provider timestamp replaces an earlier placeholder timestamp.
+- Assignment caveat:
+  - `PATCH /api/conversations/v1/{conversationId}` commits the assignment before serializing the response. A rare post-commit `500` can therefore leave the assignment applied, and a safe retry may then return `409`.
 - Deletion/cancellation/expiration:
   - No public delete or cancel API exists.
   - Webhook ledgers and projected conversations are retained indefinitely per repository docs.
@@ -486,7 +495,8 @@ or, on replay of a failed or indeterminate stored request:
 - Current API version: `v1`
 - Contract file: `public/openapi.json`
 - OpenAPI version: `3.1.1`
-- Contract/package version observed in repository: `1.1.0`
+- Contract version observed in repository: `1.1.1`
+- Package version observed in repository: `1.1.0`
 - Backward-compatibility expectations: not formally documented beyond path versioning.
 - Deprecation process: unresolved; no `deprecated` markers or sunset policy were found.
 - Breaking changes: consumers should monitor `public/openapi.json` and route version changes.
@@ -540,6 +550,13 @@ Then, in another terminal:
 npm run test:postgresql
 ```
 
+Observed setup caveats:
+
+- `npm run db:setup` uses Prisma CLI loading from `.env`, not `.env.test`.
+- `npm run dev:test` explicitly loads `.env.test`.
+- To reproduce the documented test flow safely, ensure the disposable test database URL is available to both the Prisma setup step and the test application process.
+- Although `package.json` says Node `>=22`, the locked Prisma and Redocly toolchain currently requires Node `22.12+` in practice.
+
 Contract and build validation commands used by the repository:
 
 ```bash
@@ -547,6 +564,7 @@ npm run db:validate
 npm run api:validate
 npm run lint
 npm run build
+npm run test:postgresql
 ```
 
 ## Consumer examples
@@ -678,9 +696,9 @@ Representative drain response:
 {
   "batchId": "019808b9-37c4-7ed7-93c5-8960f0b690ff",
   "claimed": 2,
-  "accepted": 1,
+  "accepted": 2,
   "failed": 0,
-  "retryScheduled": 1,
+  "retryScheduled": 0,
   "indeterminate": 0,
   "results": [
     {
@@ -690,8 +708,8 @@ Representative drain response:
     },
     {
       "messageId": "019808b9-37c4-7ed7-93c5-8960f0b690ac",
-      "state": "pending",
-      "resendEmailId": null
+      "state": "accepted",
+      "resendEmailId": "batch-2"
     }
   ]
 }
@@ -726,7 +744,8 @@ curl -i \
 ## Known gaps and unresolved questions
 
 - The repository says an external API gateway controls public exposure, but no gateway config is checked in. The app itself exposes all routes on the application host.
-- The implementation accepts some more-permissive inputs than the contract advertises, including lenient `limit` parsing and ignored unknown fields.
+- The implementation accepts some more-permissive inputs than the contract advertises, especially lenient `limit` parsing on GET endpoints.
+- Unknown request object properties are allowed by both the schema and the implementation, and they do not affect idempotency comparison.
 - Topic lookup does not enforce the documented 255-character maximum for `externalTopicId`.
 - Webhook runtime validation is prefix-based, not full schema validation.
 - Some uncaught infrastructure failures may not return the documented JSON error envelope.
@@ -735,3 +754,4 @@ curl -i \
 - No correlation/request ID header is defined.
 - Health-check behavior, successful unassigned-list pagination, and several input edge cases are not covered by integration tests.
 - Provider-sourced inbound address fields can be malformed or empty in edge cases, while the contract documents the intended normal shape.
+- The package manifest still says Node `>=22`, but the locked tooling currently needs Node `22.12+`.
