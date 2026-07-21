@@ -22,6 +22,7 @@ enum EmailMessageState {
 
 model EmailConversation {
   id                 String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  routingToken       String         @unique(map: "email_conversations_routing_token_key") @default(dbgenerated("gen_random_uuid()")) @map("routing_token") @db.Uuid
   topicType          String?        @map("topic_type") @db.VarChar(64)
   externalTopicId    String?        @map("external_topic_id") @db.VarChar(255)
   title              String

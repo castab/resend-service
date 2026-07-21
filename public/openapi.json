@@ -87,7 +87,7 @@
       "post": {
         "operationId": "receiveResendWebhook",
         "summary": "Receive a Resend webhook",
-        "description": "Verifies the Svix signature against the exact raw request body, classifies the event, and stores its normalized fields. For email.received, the service retrieves the text, HTML, and headers from Resend and updates the conversation projection; attachments are not fetched. All three Svix headers are required and must describe the submitted body. A delivery using an svix-id already stored for the same event family is acknowledged with the same 200 response after projection succeeds. Resend may retry non-200 responses. Swagger UI cannot generate valid Svix signatures; interactive requests require header values generated for the exact raw request body.",
+        "description": "Verifies the Svix signature against the exact raw request body, classifies the event, and stores its normalized fields. For email.received, the service retrieves the text, HTML, and headers from Resend and updates the conversation projection; attachments are not fetched. Eligible RFC Message-ID ancestry remains authoritative. When RFC ancestry does not resolve a conversation, a recognized conversation token in to or received_for is used only when the sender matches that conversation's participant. All three Svix headers are required and must describe the submitted body. A delivery using an svix-id already stored for the same event family is acknowledged with the same 200 response after projection succeeds. Resend may retry non-200 responses. Swagger UI cannot generate valid Svix signatures; interactive requests require header values generated for the exact raw request body.",
         "tags": ["Resend webhooks"],
         "security": [
           {
@@ -1213,7 +1213,8 @@
           },
           "replyTo": {
             "type": ["string", "null"],
-            "format": "email"
+            "format": "email",
+            "description": "For outbound messages, the service-generated conversation routing address. For inbound messages, the sender-provided Reply-To address when present."
           },
           "subject": {
             "type": "string"
@@ -1239,6 +1240,7 @@
           "title",
           "subject",
           "participant",
+          "replyToAddress",
           "lastMessageAt",
           "createdAt",
           "updatedAt",
@@ -1268,6 +1270,11 @@
           },
           "participant": {
             "$ref": "#/components/schemas/ParticipantResponse"
+          },
+          "replyToAddress": {
+            "type": "string",
+            "format": "email",
+            "description": "Stable service-generated Reply-To address used for this conversation's outbound messages."
           },
           "lastMessageAt": {
             "type": "string",

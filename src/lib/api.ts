@@ -6,6 +6,7 @@ import {
   getPrismaClient,
   type Prisma,
 } from '@/lib/database';
+import { buildConversationReplyTo } from '@/lib/email';
 
 export function authorize(request: Request): NextResponse | null {
   return authorizeWithCredential(
@@ -153,6 +154,10 @@ export function serializeConversation(
       address: conversation.participantAddress,
       name: conversation.participantName,
     },
+    replyToAddress: buildConversationReplyTo(
+      process.env.RESEND_REPLY_TO ?? '',
+      conversation.routingToken,
+    ),
     lastMessageAt: conversation.lastMessageAt.toISOString(),
     createdAt: conversation.createdAt.toISOString(),
     updatedAt: conversation.updatedAt.toISOString(),

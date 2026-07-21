@@ -97,6 +97,22 @@ export class PostgreSQLTestClient {
     return rows[0] || null;
   }
 
+  async createRoutedConversation(participantAddress: string) {
+    if (!this.client) {
+      throw new Error('Not connected');
+    }
+    const { rows } = await this.client.query(
+      `INSERT INTO email_conversations
+         (topic_type, external_topic_id, title, subject, participant_address,
+          last_message_at, updated_at)
+       VALUES ('test', gen_random_uuid()::text, 'Routed message',
+               'Routed message', $1, now(), now())
+       RETURNING routing_token`,
+      [participantAddress],
+    );
+    return { routingToken: rows[0].routing_token as string };
+  }
+
   async createOutboundWithoutInternetMessageId(
     resendEmailId: string,
     participantAddress: string,

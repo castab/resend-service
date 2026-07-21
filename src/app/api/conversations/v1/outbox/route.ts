@@ -6,7 +6,14 @@ import {
   serializeMessage,
 } from '@/lib/api';
 import { getPrismaClient, Prisma, type PrismaClient } from '@/lib/database';
-import { hashSendRequest, normalizeSubject, parseAddress } from '@/lib/email';
+import {
+  buildConversationReplyTo,
+  createRoutingToken,
+  hashSendRequest,
+  isValidReplyToBaseAddress,
+  normalizeSubject,
+  parseAddress,
+} from '@/lib/email';
 import {
   type CreateConversationInput,
   validateCreateBody,
@@ -36,7 +43,12 @@ export async function POST(request: Request) {
   }
 
   const configuredFrom = process.env.RESEND_FROM;
-  if (!configuredFrom) {
+  const configuredReplyTo = process.env.RESEND_REPLY_TO;
+  if (
+    !configuredFrom ||
+    !configuredReplyTo ||
+    !isValidReplyToBaseAddress(configuredReplyTo)
+  ) {
     return NextResponse.json(
       { error: 'Server misconfiguration' },
       { status: 500 },
@@ -66,10 +78,16 @@ export async function POST(request: Request) {
     validation.value.subject ?? validation.value.topic.title,
   );
   const now = new Date();
+  const routingToken = createRoutingToken();
+  const replyToAddress = buildConversationReplyTo(
+    configuredReplyTo,
+    routingToken,
+  );
 
   try {
     const created = await client.emailConversation.create({
       data: {
+        routingToken,
         topicType: validation.value.topic.type,
         externalTopicId: validation.value.topic.externalId,
         title: validation.value.topic.title,
@@ -84,6 +102,7 @@ export async function POST(request: Request) {
             fromAddress: from.address,
             fromName: from.name,
             toAddress: validation.value.participant.email,
+            replyToAddress,
             subject,
             textBody: validation.value.message.text,
             htmlBody: validation.value.message.html,
@@ -131,6 +150,7 @@ export async function POST(request: Request) {
           subject,
           idempotencyKey,
           requestHash,
+          configuredReplyTo,
         });
       } catch (reopenError) {
         if (
@@ -179,6 +199,7 @@ async function reopenFailedTopicConversation(
     subject: string;
     idempotencyKey: string;
     requestHash: string;
+    configuredReplyTo: string;
   },
 ): Promise<{ conversationId: string; messageId: string } | null> {
   const conversation = await client.emailConversation.findUnique({
@@ -223,6 +244,10 @@ async function reopenFailedTopicConversation(
         fromAddress: input.from.address,
         fromName: input.from.name,
         toAddress: input.value.participant.email,
+        replyToAddress: buildConversationReplyTo(
+          input.configuredReplyTo,
+          conversation.routingToken,
+        ),
         subject: input.subject,
         textBody: input.value.message.text ?? null,
         htmlBody: input.value.message.html ?? null,

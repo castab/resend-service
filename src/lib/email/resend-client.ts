@@ -1,6 +1,7 @@
 export interface SendEmailInput {
   from: string;
   to: string[];
+  reply_to?: string;
   subject: string;
   text?: string;
   html?: string;
@@ -18,6 +19,7 @@ export interface ResendEmail {
   html: string | null;
   headers?: Record<string, string>;
   reply_to?: string[];
+  received_for?: string[];
 }
 
 export interface ResendEmailClient {

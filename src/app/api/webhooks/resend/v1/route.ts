@@ -9,6 +9,7 @@ import {
   getConfiguredResendClient,
   getHeader,
   hydrateReferencedOutboundMessages,
+  isValidReplyToBaseAddress,
   parseAddress,
   projectInboundEmail,
 } from '@/lib/email';
@@ -62,6 +63,10 @@ async function insertEmailEvent(
   });
 
   if (event.type === 'email.received') {
+    const configuredReplyTo = process.env.RESEND_REPLY_TO;
+    if (!configuredReplyTo || !isValidReplyToBaseAddress(configuredReplyTo)) {
+      throw new Error('Missing or invalid RESEND_REPLY_TO configuration');
+    }
     const existingReceivedMessage = await client.emailMessage.findUnique({
       where: { resendEmailId: event.data.email_id },
     });
@@ -97,7 +102,12 @@ async function insertEmailEvent(
       [...references, ...inReplyTo],
       inReplyTo.at(-1) ?? references.at(-1),
     );
-    await projectInboundEmail(client, event.data, receivedEmail);
+    await projectInboundEmail(
+      client,
+      event.data,
+      receivedEmail,
+      configuredReplyTo,
+    );
   }
 }
 

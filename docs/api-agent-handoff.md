@@ -36,8 +36,10 @@ This service is the source of truth for topic-centered email conversations, outb
 6. Idempotency compares normalized validated fields, not literal JSON bodies.
 7. Replies require a parent message in the same conversation and the service will not send a reply without an RFC parent `Message-ID`.
 8. The caller cannot choose the sender mailbox; the service always uses configured `RESEND_FROM`.
-9. Returned HTML is untrusted and must be sanitized before rendering.
-10. `accepted` means provider API acceptance, not final delivery.
+9. Outbound messages use a service-generated conversation address based on `RESEND_REPLY_TO`; callers cannot set it.
+10. Eligible RFC ancestry wins over address-token routing. Tokens are used only as a fallback and still require the conversation participant's sender address.
+11. Returned HTML is untrusted and must be sanitized before rendering.
+12. `accepted` means provider API acceptance, not final delivery.
 
 ## Retry and idempotency rules
 

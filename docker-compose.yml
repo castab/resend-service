@@ -25,6 +25,7 @@ services:
       CONVERSATION_API_KEY: ${CONVERSATION_API_KEY:-}
       OUTBOX_DRAIN_API_KEY: ${OUTBOX_DRAIN_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
+      RESEND_REPLY_TO: ${RESEND_REPLY_TO:-}
     depends_on:
       - postgresql
 
