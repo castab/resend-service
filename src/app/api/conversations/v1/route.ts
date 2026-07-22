@@ -102,6 +102,7 @@ export async function POST(request: Request) {
           create: {
             direction: 'OUTBOUND',
             state: 'PENDING',
+            deliveryState: 'UNKNOWN',
             fromAddress: from.address,
             fromName: from.name,
             toAddress: validation.value.participant.email,
@@ -275,6 +276,7 @@ async function reopenFailedTopicConversation(
         conversationId: conversation.id,
         direction: 'OUTBOUND',
         state: 'PENDING',
+        deliveryState: 'UNKNOWN',
         fromAddress: input.from.address,
         fromName: input.from.name,
         toAddress: input.value.participant.email,

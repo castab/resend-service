@@ -2,11 +2,14 @@ import { FakeResendServer } from '@test-support/fake-resend-server';
 import { TEST_CONFIG } from '@test-support/setup';
 import { Client } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { fixtures } from '../helpers/fixtures';
+import { generateSvixId, signPayload } from '../helpers/svix';
 
 describe('Private conversation API', () => {
   const resendServer = new FakeResendServer();
   const database = new Client({ connectionString: TEST_CONFIG.postgresql.url });
   const baseUrl = `${TEST_CONFIG.appBaseUrl}/api/conversations/v1`;
+  const webhookUrl = `${TEST_CONFIG.appBaseUrl}/api/webhooks/resend/v1`;
 
   beforeAll(async () => {
     await database.connect();
@@ -20,6 +23,7 @@ describe('Private conversation API', () => {
   });
 
   beforeEach(async () => {
+    await database.query('TRUNCATE TABLE resend_wh_emails');
     await database.query('TRUNCATE TABLE email_outbox_batches CASCADE');
     await database.query('TRUNCATE TABLE email_conversations CASCADE');
     resendServer.reset();
@@ -33,6 +37,8 @@ describe('Private conversation API', () => {
   it('starts, continues, and hydrates a topic conversation', async () => {
     const created = await createConversation('create-booking-4821');
     expect(created.response.status).toBe(201);
+    expect(created.body.message.deliveryState).toBe('unknown');
+    expect(created.body.message.deliveredAt).toBeNull();
     expect(created.body.message.internetMessageId).toBe('<sent-1@resend.test>');
     expectRoutingAddress(created.body.message.replyTo);
     expect(resendServer.sends[0].input.reply_to).toBe(
@@ -72,6 +78,38 @@ describe('Private conversation API', () => {
     expect(hydrated.messages).toHaveLength(2);
     expect(hydrated.replyToAddress).toBe(created.body.message.replyTo);
     expect(hydrated.messages[1].parentMessageId).toBe(hydrated.messages[0].id);
+  });
+
+  it('reconciles delivery webhooks that arrive before send acceptance', async () => {
+    const eventCreatedAt = '2026-07-21T11:00:00.000Z';
+    const event = fixtures.email.delivered();
+    const signed = signPayload(
+      TEST_CONFIG.webhookSecret,
+      {
+        ...event,
+        created_at: eventCreatedAt,
+        data: { ...event.data, email_id: 'sent-1' },
+      },
+      generateSvixId(),
+    );
+    const webhook = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: signed.headers,
+      body: signed.body,
+    });
+
+    const created = await createConversation('early-delivered');
+    const hydratedResponse = await fetch(`${baseUrl}/topics/booking/4821`, {
+      headers: headers(),
+    });
+    const hydrated = await hydratedResponse.json();
+
+    expect(webhook.status).toBe(200);
+    expect(created.response.status).toBe(201);
+    expect(created.body.message.state).toBe('accepted');
+    expect(created.body.message.deliveryState).toBe('delivered');
+    expect(created.body.message.deliveredAt).toBe(eventCreatedAt);
+    expect(hydrated.messages[0].deliveryState).toBe('delivered');
   });
 
   it('retries temporarily unavailable sent threading metadata', async () => {

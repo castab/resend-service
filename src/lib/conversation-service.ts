@@ -2,6 +2,7 @@ import type { EmailMessage, PrismaClient } from '@/lib/database';
 import {
   getConfiguredResendClient,
   ResendApiError,
+  reconcileOutboundDeliveryState,
   recordOutboundInternetMessageId,
   type SendEmailInput,
 } from '@/lib/email';
@@ -34,13 +35,18 @@ export async function deliverPendingMessage(
           buildSendEmailInput(message),
           `conversation/${message.id}`,
         );
-        return await transaction.emailMessage.update({
+        await transaction.emailMessage.update({
           where: { id: message.id },
           data: {
             state: 'ACCEPTED',
             stateDetail: null,
+            deliveryState: 'UNKNOWN',
             resendEmailId: sent.id,
           },
+        });
+        await reconcileOutboundDeliveryState(transaction, sent.id);
+        return transaction.emailMessage.findUniqueOrThrow({
+          where: { id: message.id },
         });
       } catch (error) {
         sendError = error;

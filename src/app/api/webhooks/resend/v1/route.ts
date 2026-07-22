@@ -12,6 +12,7 @@ import {
   isValidReplyToBaseAddress,
   parseAddress,
   projectInboundEmail,
+  projectOutboundDeliveryStateForResendEmail,
 } from '@/lib/email';
 import {
   createWebhookHandler,
@@ -29,38 +30,61 @@ async function insertEmailEvent(
     where: { svixId },
   });
   if (existingEvent && event.type !== 'email.received') {
+    await client.$transaction((transaction) =>
+      projectOutboundDeliveryStateForResendEmail(
+        transaction,
+        existingEvent.emailId,
+      ),
+    );
     return;
   }
 
   const data = prepareEmailEventData(event);
-  await client.emailWebhookEvent.createMany({
-    data: [
-      {
-        svixId,
-        eventType: data.event_type,
-        eventCreatedAt: data.event_created_at,
-        emailId: data.email_id,
-        fromAddress: data.from_address,
-        toAddresses: data.to_addresses,
-        subject: data.subject,
-        emailCreatedAt: data.email_created_at,
-        broadcastId: data.broadcast_id,
-        templateId: data.template_id,
-        tags:
-          data.tags?.map(({ name, value }) => ({ name, value })) ??
-          Prisma.DbNull,
-        bounceType: data.bounce_type,
-        bounceSubType: data.bounce_sub_type,
-        bounceMessage: data.bounce_message,
-        bounceDiagnosticCode: data.bounce_diagnostic_code ?? [],
-        clickIpAddress: data.click_ip_address,
-        clickLink: data.click_link,
-        clickTimestamp: data.click_timestamp,
-        clickUserAgent: data.click_user_agent,
-      },
-    ],
-    skipDuplicates: true,
-  });
+  const createEmailEvent = (
+    transaction: PrismaClient | Prisma.TransactionClient,
+  ) =>
+    transaction.emailWebhookEvent.createMany({
+      data: [
+        {
+          svixId,
+          eventType: data.event_type,
+          eventCreatedAt: data.event_created_at,
+          emailId: data.email_id,
+          fromAddress: data.from_address,
+          toAddresses: data.to_addresses,
+          subject: data.subject,
+          emailCreatedAt: data.email_created_at,
+          broadcastId: data.broadcast_id,
+          templateId: data.template_id,
+          tags:
+            data.tags?.map(({ name, value }) => ({ name, value })) ??
+            Prisma.DbNull,
+          bounceType: data.bounce_type,
+          bounceSubType: data.bounce_sub_type,
+          bounceMessage: data.bounce_message,
+          bounceDiagnosticCode: data.bounce_diagnostic_code ?? [],
+          deliveryDetail: data.delivery_detail,
+          clickIpAddress: data.click_ip_address,
+          clickLink: data.click_link,
+          clickTimestamp: data.click_timestamp,
+          clickUserAgent: data.click_user_agent,
+        },
+      ],
+      skipDuplicates: true,
+    });
+
+  if (event.type !== 'email.received') {
+    await client.$transaction(async (transaction) => {
+      await createEmailEvent(transaction);
+      await projectOutboundDeliveryStateForResendEmail(
+        transaction,
+        data.email_id,
+      );
+    });
+    return;
+  }
+
+  await createEmailEvent(client);
 
   if (event.type === 'email.received') {
     const configuredReplyTo = process.env.RESEND_REPLY_TO;

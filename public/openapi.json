@@ -645,6 +645,9 @@
                       "direction": "outbound",
                       "state": "accepted",
                       "stateDetail": null,
+                      "deliveryState": "unknown",
+                      "deliveryStateDetail": null,
+                      "deliveredAt": null,
                       "resendEmailId": "sent_123",
                       "internetMessageId": "<sent-1@resend.test>",
                       "from": {
@@ -664,6 +667,9 @@
                       "direction": "outbound",
                       "state": "accepted",
                       "stateDetail": null,
+                      "deliveryState": "delivered",
+                      "deliveryStateDetail": null,
+                      "deliveredAt": "2026-07-18T12:05:30.000Z",
                       "resendEmailId": "sent_124",
                       "internetMessageId": "<sent-2@resend.test>",
                       "from": {
@@ -864,6 +870,9 @@
                         "direction": "outbound",
                         "state": "failed",
                         "stateDetail": "provider rejected send",
+                        "deliveryState": "unknown",
+                        "deliveryStateDetail": null,
+                        "deliveredAt": null,
                         "resendEmailId": null,
                         "internetMessageId": null,
                         "from": {
@@ -889,6 +898,9 @@
                         "direction": "outbound",
                         "state": "failed",
                         "stateDetail": "provider rejected send",
+                        "deliveryState": "unknown",
+                        "deliveryStateDetail": null,
+                        "deliveredAt": null,
                         "resendEmailId": null,
                         "internetMessageId": null,
                         "from": {
@@ -1058,6 +1070,9 @@
                       "direction": "outbound",
                       "state": "accepted",
                       "stateDetail": null,
+                      "deliveryState": "delivered",
+                      "deliveryStateDetail": null,
+                      "deliveredAt": "2026-07-18T12:00:30.000Z",
                       "resendEmailId": "sent_123",
                       "internetMessageId": "<sent-1@resend.test>",
                       "from": {
@@ -1402,6 +1417,9 @@
           "direction",
           "state",
           "stateDetail",
+          "deliveryState",
+          "deliveryStateDetail",
+          "deliveredAt",
           "resendEmailId",
           "internetMessageId",
           "from",
@@ -1438,6 +1456,29 @@
           "stateDetail": {
             "type": ["string", "null"],
             "description": "Human-readable provider or runtime detail. Not stable for machine parsing."
+          },
+          "deliveryState": {
+            "type": ["string", "null"],
+            "enum": [
+              "unknown",
+              "delivered",
+              "delivery_delayed",
+              "bounced",
+              "complained",
+              "suppressed",
+              "failed",
+              null
+            ],
+            "description": "Outbound-only delivery lifecycle projected from Resend delivery webhooks. Inbound messages return null. unknown means no delivery lifecycle webhook has been projected yet."
+          },
+          "deliveryStateDetail": {
+            "type": ["string", "null"],
+            "description": "Human-readable delivery detail from Resend webhook payloads. Not stable for machine parsing."
+          },
+          "deliveredAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Timestamp from the first projected email.delivered webhook for outbound messages, or null when no delivery confirmation has been projected."
           },
           "resendEmailId": {
             "type": ["string", "null"]
@@ -1712,6 +1753,12 @@
           },
           "click": {
             "$ref": "#/components/schemas/ClickData"
+          },
+          "failed": {
+            "$ref": "#/components/schemas/FailedData"
+          },
+          "suppressed": {
+            "$ref": "#/components/schemas/SuppressedData"
           }
         }
       },
@@ -1763,6 +1810,27 @@
             "$ref": "#/components/schemas/Timestamp"
           },
           "userAgent": {
+            "type": "string"
+          }
+        }
+      },
+      "FailedData": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Provider-supplied failure reason, such as reached_daily_quota."
+          }
+        }
+      },
+      "SuppressedData": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "type": {
             "type": "string"
           }
         }

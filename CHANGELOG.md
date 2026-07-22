@@ -7,6 +7,11 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added outbound delivery-state projection from Resend lifecycle webhooks while
+  preserving provider send acceptance as the existing message `state`.
+
 ## [0.0.1] - 2026-07-21
 
 ### Added

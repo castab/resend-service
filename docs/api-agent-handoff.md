@@ -13,7 +13,7 @@ exist unless your repository defines them separately.
 
 ## Service purpose
 
-This service is the source of truth for topic-centered email conversations, outbound send intent/state, inbound Resend email projection, and RFC threading ancestry. It is not a general contact or delivery-reporting API.
+This service is the source of truth for topic-centered email conversations, outbound send intent/state, inbound Resend email projection, outbound delivery-state projection from Resend lifecycle webhooks, and RFC threading ancestry. It is not a general contact or engagement analytics API.
 
 ## Primary workflows
 
@@ -46,8 +46,10 @@ This service is the source of truth for topic-centered email conversations, outb
 10. Eligible RFC ancestry wins over address-token routing. Tokens are used only as a fallback and still require the conversation participant's sender address.
 11. Returned HTML is untrusted and must be sanitized before rendering.
 12. `accepted` means provider API acceptance, not final delivery.
-13. `403` does not occur in the current implementation; invalid scoped credentials return `401`.
-14. Drain responses can report failure or retry work with `200`, but current batch finalization is normally uniform across all items in one response.
+13. `deliveryState: "delivered"` means a matching Resend `email.delivered` webhook was projected.
+14. `email.opened` and `email.clicked` are ingested when configured but are not delivery confirmations.
+15. `403` does not occur in the current implementation; invalid scoped credentials return `401`.
+16. Drain responses can report failure or retry work with `200`, but current batch finalization is normally uniform across all items in one response.
 
 ## Retry and idempotency rules
 

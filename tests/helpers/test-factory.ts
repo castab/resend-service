@@ -1,9 +1,15 @@
 import { FakeResendServer } from '@test-support/fake-resend-server';
 import { TEST_CONFIG } from '@test-support/setup';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { buildConversationReplyTo } from '@/lib/email';
+import { buildConversationReplyTo, type EmailWebhookEvent } from '@/lib/email';
 import { fixtures } from './fixtures';
 import { generateSvixId, signPayload } from './svix';
+
+interface EmailMessageRow {
+  delivery_state: string | null;
+  delivery_state_detail: string | null;
+  delivered_at: Date | string | null;
+}
 
 type CollectionName =
   | 'resend_wh_emails'
@@ -102,6 +108,36 @@ export function createWebhookTests(createClient: () => TestDbClient) {
         expect(stored).not.toBeNull();
       });
 
+      it('projects email.delivered onto a matching outbound message', async () => {
+        const svixId = generateSvixId();
+        const emailId = 'em_project_delivered';
+        const eventCreatedAt = '2026-07-21T10:00:00.000Z';
+        await dbClient.createOutboundWithoutInternetMessageId(
+          emailId,
+          'recipient@example.com',
+        );
+        const event = withEmailId(
+          fixtures.email.delivered(),
+          emailId,
+          eventCreatedAt,
+        );
+        const signed = signPayload(TEST_CONFIG.webhookSecret, event, svixId);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: signed.headers,
+          body: signed.body,
+        });
+
+        expect(response.status).toBe(200);
+        const message = (await dbClient.findEmailMessageByResendId(
+          emailId,
+        )) as EmailMessageRow;
+        expect(message.delivery_state).toBe('DELIVERED');
+        expect(message.delivery_state_detail).toBeNull();
+        expect(toIso(message.delivered_at)).toBe(eventCreatedAt);
+      });
+
       it('stores email.delivery_delayed event', async () => {
         const svixId = generateSvixId();
         const event = fixtures.email.deliveryDelayed();
@@ -153,6 +189,35 @@ export function createWebhookTests(createClient: () => TestDbClient) {
         expect(stored).not.toBeNull();
       });
 
+      it('projects bounced detail without marking the message delivered', async () => {
+        const svixId = generateSvixId();
+        const emailId = 'em_project_bounced';
+        await dbClient.createOutboundWithoutInternetMessageId(
+          emailId,
+          'invalid@example.com',
+        );
+        const event = withEmailId(
+          fixtures.email.bounced(),
+          emailId,
+          '2026-07-21T10:05:00.000Z',
+        );
+        const signed = signPayload(TEST_CONFIG.webhookSecret, event, svixId);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: signed.headers,
+          body: signed.body,
+        });
+
+        expect(response.status).toBe(200);
+        const message = (await dbClient.findEmailMessageByResendId(
+          emailId,
+        )) as EmailMessageRow;
+        expect(message.delivery_state).toBe('BOUNCED');
+        expect(message.delivery_state_detail).toBe('Mailbox not found');
+        expect(message.delivered_at).toBeNull();
+      });
+
       it('stores email.opened event', async () => {
         const svixId = generateSvixId();
         const event = fixtures.email.opened();
@@ -185,6 +250,57 @@ export function createWebhookTests(createClient: () => TestDbClient) {
 
         const stored = await dbClient.findBySvixId('resend_wh_emails', svixId);
         expect(stored).not.toBeNull();
+      });
+
+      it('ingests opened and clicked events without changing delivery state', async () => {
+        const emailId = 'em_project_engagement';
+        await dbClient.createOutboundWithoutInternetMessageId(
+          emailId,
+          'opener@example.com',
+        );
+        const opened = signPayload(
+          TEST_CONFIG.webhookSecret,
+          withEmailId(
+            fixtures.email.opened(),
+            emailId,
+            '2026-07-21T10:10:00.000Z',
+          ),
+          generateSvixId(),
+        );
+        const clickSvixId = generateSvixId();
+        const clicked = signPayload(
+          TEST_CONFIG.webhookSecret,
+          withEmailId(
+            fixtures.email.clicked(),
+            emailId,
+            '2026-07-21T10:11:00.000Z',
+          ),
+          clickSvixId,
+        );
+
+        const openedResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: opened.headers,
+          body: opened.body,
+        });
+        const clickedResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: clicked.headers,
+          body: clicked.body,
+        });
+
+        expect(openedResponse.status).toBe(200);
+        expect(clickedResponse.status).toBe(200);
+        const storedClick = (await dbClient.findBySvixId(
+          'resend_wh_emails',
+          clickSvixId,
+        )) as { click_link: string | null };
+        expect(storedClick.click_link).toBe('https://example.com/link');
+        const message = (await dbClient.findEmailMessageByResendId(
+          emailId,
+        )) as EmailMessageRow;
+        expect(message.delivery_state).toBe('UNKNOWN');
+        expect(message.delivered_at).toBeNull();
       });
 
       it('stores email.failed event', async () => {
@@ -236,6 +352,114 @@ export function createWebhookTests(createClient: () => TestDbClient) {
 
         const stored = await dbClient.findBySvixId('resend_wh_emails', svixId);
         expect(stored).not.toBeNull();
+      });
+
+      it('projects non-delivered lifecycle outcomes distinctly', async () => {
+        const cases = [
+          {
+            emailId: 'em_project_delayed',
+            event: fixtures.email.deliveryDelayed(),
+            state: 'DELIVERY_DELAYED',
+            detail: null,
+          },
+          {
+            emailId: 'em_project_complained',
+            event: fixtures.email.complained(),
+            state: 'COMPLAINED',
+            detail: null,
+          },
+          {
+            emailId: 'em_project_failed',
+            event: withData(fixtures.email.failed(), {
+              failed: { reason: 'reached_daily_quota' },
+            }),
+            state: 'FAILED',
+            detail: 'reached_daily_quota',
+          },
+          {
+            emailId: 'em_project_suppressed',
+            event: withData(fixtures.email.suppressed(), {
+              suppressed: { message: 'Recipient is on a suppression list' },
+            }),
+            state: 'SUPPRESSED',
+            detail: 'Recipient is on a suppression list',
+          },
+        ];
+
+        for (const [index, item] of cases.entries()) {
+          await dbClient.createOutboundWithoutInternetMessageId(
+            item.emailId,
+            'recipient@example.com',
+          );
+          const signed = signPayload(
+            TEST_CONFIG.webhookSecret,
+            withEmailId(
+              item.event,
+              item.emailId,
+              `2026-07-21T10:${30 + index}:00.000Z`,
+            ),
+            generateSvixId(),
+          );
+
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: signed.headers,
+            body: signed.body,
+          });
+
+          expect(response.status).toBe(200);
+          const message = (await dbClient.findEmailMessageByResendId(
+            item.emailId,
+          )) as EmailMessageRow;
+          expect(message.delivery_state).toBe(item.state);
+          expect(message.delivery_state_detail).toBe(item.detail);
+          expect(message.delivered_at).toBeNull();
+        }
+      });
+
+      it('does not let a delayed event regress a terminal delivery state', async () => {
+        const emailId = 'em_project_stale_delayed';
+        await dbClient.createOutboundWithoutInternetMessageId(
+          emailId,
+          'recipient@example.com',
+        );
+        const delivered = signPayload(
+          TEST_CONFIG.webhookSecret,
+          withEmailId(
+            fixtures.email.delivered(),
+            emailId,
+            '2026-07-21T10:20:00.000Z',
+          ),
+          generateSvixId(),
+        );
+        const delayed = signPayload(
+          TEST_CONFIG.webhookSecret,
+          withEmailId(
+            fixtures.email.deliveryDelayed(),
+            emailId,
+            '2026-07-21T10:21:00.000Z',
+          ),
+          generateSvixId(),
+        );
+
+        const deliveredResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: delivered.headers,
+          body: delivered.body,
+        });
+        const delayedResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: delayed.headers,
+          body: delayed.body,
+        });
+
+        expect(deliveredResponse.status).toBe(200);
+        expect(delayedResponse.status).toBe(200);
+        const message = (await dbClient.findEmailMessageByResendId(
+          emailId,
+        )) as EmailMessageRow;
+        expect(message.delivery_state).toBe('DELIVERED');
+        expect(toIso(message.delivered_at)).toBe('2026-07-21T10:20:00.000Z');
       });
 
       it('stores email.received event', async () => {
@@ -982,4 +1206,30 @@ export function createWebhookTests(createClient: () => TestDbClient) {
       });
     });
   });
+}
+
+function withEmailId(
+  event: EmailWebhookEvent,
+  emailId: string,
+  createdAt: string,
+): EmailWebhookEvent {
+  return {
+    ...event,
+    created_at: createdAt,
+    data: { ...event.data, email_id: emailId },
+  };
+}
+
+function withData(
+  event: EmailWebhookEvent,
+  data: Partial<EmailWebhookEvent['data']>,
+): EmailWebhookEvent {
+  return {
+    ...event,
+    data: { ...event.data, ...data },
+  };
+}
+
+function toIso(value: Date | string | null): string | null {
+  return value ? new Date(value).toISOString() : null;
 }
