@@ -1,5 +1,19 @@
 # Repository Rules
 
+## Current Port Status
+
+- The Kotlin runtime currently implements configuration, database pool creation,
+  explicit Flyway migration, health, static API documentation, and
+  conversation/drain authentication boundaries.
+- Conversation and outbox operations return `501` after successful
+  authentication. The webhook route always returns `501` and does not verify
+  requests.
+- Treat the webhook, conversation, database, and email rules below as required
+  acceptance criteria for completing the port, not as claims of current
+  behavior.
+- Do not infer implemented behavior from the retained migrations or historical
+  schemas. Verify every documented capability against Kotlin routes and tests.
+
 ## Application Boundaries
 
 - This repository contains one deployable Kotlin/http4k application.
@@ -42,7 +56,8 @@
 
 ## Database
 
-- Treat checked-in Flyway migrations under `src/main/resources/db/migration` as authoritative.
+- Treat checked-in Flyway migrations under
+  `src/main/resources/db/migration` as authoritative.
 - Add migrations; never edit deployed migration history.
 - Preserve UUIDv7 primary keys and all webhook, message, and outbox idempotency
   constraints.
@@ -61,9 +76,12 @@
 
 ## Contracts And Tests
 
-- Keep `src/main/resources/public/openapi.json` aligned with every route or
-  behavior change.
+- Keep `src/main/resources/public/openapi.json` aligned with every business API
+  route or behavior change. `/docs` and `/openapi.json` are supporting resources
+  described in the guides rather than OpenAPI operations.
 - Preserve explicit webhook and outbox-drain security overrides in OpenAPI.
-- Integration tests require a dedicated disposable `TEST_DATABASE_URL` and
-  truncate application tables.
-- Keep test files serial while they share PostgreSQL and the fake Resend server.
+- When database integration tests are restored, require a dedicated disposable
+  `TEST_DATABASE_URL`, truncate application tables, and keep tests serial while
+  they share PostgreSQL and the fake Resend server.
+- Current tests are unit-level Kotest specs and do not use PostgreSQL or a fake
+  Resend server.

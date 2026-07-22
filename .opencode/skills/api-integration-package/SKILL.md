@@ -48,6 +48,9 @@ Inspect these first:
 6. Preserve the contract as strict public behavior when implementation is more permissive. Record the mismatch in the guides instead of broadening the contract without evidence.
 7. Treat unknown framework-generated failures as unresolved if the application does not control the response body.
 8. Keep copied consumer-facing docs portable. Do not require downstream readers to have this repository's local scripts, Docker Compose setup, OpenCode skills, or command files.
+9. Never preserve historical success schemas as the current contract when a
+   registered operation is a stub. Move intended behavior into explicitly
+   labeled acceptance criteria instead.
 
 ## Workflow
 
@@ -71,7 +74,7 @@ Required route inventory for this repo:
 - `GET /api/health/v1`
 - `POST /api/webhooks/resend/v1`
 - `POST /api/conversations/v1`
-- `GET /api/conversations/v1?assignment=unassigned`
+- `GET /api/conversations/v1`
 - `POST /api/conversations/v1/outbox`
 - `POST /api/conversations/v1/outbox/drain`
 - `GET /api/conversations/v1/{conversationId}`
@@ -82,16 +85,19 @@ Required route inventory for this repo:
 
 Do not add `/docs` or `/openapi.json` to the OpenAPI contract. They may be referenced in guides only as supporting resources.
 
+The route list is an inventory, not evidence that each operation is functional.
+Document the exact currently reachable status codes and bodies for every route.
+
 ### 2. Reconcile the contract
 
 Update `src/main/resources/public/openapi.json` so it matches supported behavior.
 
 Include:
 
-- All supported API operations above
+- All registered API operations above, with implementation status made explicit
 - Security requirements
 - Relevant header parameters
-- Request and response schemas
+- Request and response schemas that the current runtime actually reads or emits
 - Nullability and required fields
 - Enumerations
 - Representative examples
@@ -151,11 +157,9 @@ Run these with explicit timeouts because long-running processes are known to han
 ./gradlew test
 ```
 
-For integration tests, confirm the test database is disposable before running:
-
-```bash
-./gradlew test
-```
+When database integration tests exist, confirm the test database is disposable
+before running them. Do not imply that the current unit suite exercises a
+database.
 
 Notes:
 
@@ -178,7 +182,8 @@ At the end, report:
 ## Non-Goals
 
 - Do not change runtime behavior unless explicitly requested.
-- Do not rewrite the entire codebase documentation.
+- Do not change unrelated maintainer documentation unless the user requested a
+  broader documentation sweep.
 - Do not add browser-facing auth guidance that implies these credentials are safe in frontend code.
 
 After adding or editing this skill or related OpenCode config files, remind the user that OpenCode must be restarted before the new skill is available.

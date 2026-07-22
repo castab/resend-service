@@ -20,7 +20,6 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgresql:5432/resend_test
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      RESEND_API_BASE_URL: ${RESEND_API_BASE_URL:-}
       RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
       CONVERSATION_API_KEY: ${CONVERSATION_API_KEY:-}
       OUTBOX_DRAIN_API_KEY: ${OUTBOX_DRAIN_API_KEY:-}

@@ -2,7 +2,7 @@
 
 ## Versioning policy
 
-- Git tags use stable Semantic Versioning with a `v` prefix, such as `v0.0.1`.
+- Git tags use stable Semantic Versioning with a `v` prefix, such as `v0.3.0`.
 - Repository metadata uses the same version without the `v` prefix.
 - Until `1.0.0`, treat `0.x.0` releases as the place for contract or behavior
   changes that may require consumer updates.
@@ -14,6 +14,7 @@
 - `build.gradle.kts`
 - `src/main/resources/public/openapi.json`
 - `docs/api-consumer-guide.md`
+- `docs/api-agent-handoff.md`
 - `CHANGELOG.md`
 
 Run the Gradle and container verification steps before opening or merging a
@@ -28,8 +29,13 @@ release PR.
 
    ```bash
    ./gradlew test shadowJar
-   ./gradlew nativeCompile
+   ./gradlew nativeCompile --no-configuration-cache
    docker build -t resend-service:test .
+   npx --yes markdownlint-cli2 "**/*.md" "#.opencode/node_modules/**"
+   npx --yes @redocly/cli lint src/main/resources/public/openapi.json \
+     --skip-rule info-license \
+     --skip-rule operation-2xx-response \
+     --skip-rule operation-4xx-response
    ```
 
 4. Open a pull request into `main` with the version and changelog updates.
@@ -39,12 +45,13 @@ release PR.
    ```bash
    git checkout main
    git pull --ff-only
-   git tag -a v0.0.1 -m "Release v0.0.1"
-   git push origin v0.0.1
+   VERSION=v0.3.0
+   git tag -a "$VERSION" -m "Release $VERSION"
+   git push origin "$VERSION"
    ```
 
-6. The tag-triggered publish workflow builds and pushes these Docker tags to
-   Docker Hub for stable releases:
+6. The tag-triggered publish workflow builds and pushes `linux/amd64` Docker
+   tags to Docker Hub for stable releases:
 
    - `castab/resend-service:x.y.z`
    - `castab/resend-service:x.y`
@@ -62,4 +69,13 @@ release PR.
   - `DOCKERHUB_USERNAME`
   - `DOCKERHUB_TOKEN`
 
-The release image runs the native `resend-service` binary built from the Kotlin/http4k application; verify both the non-default `PORT` smoke test and the `migrate` command before publishing.
+The publish workflow does not run tests or a container smoke test. Before
+publishing, verify the native `resend-service` image with a non-default `PORT`
+and verify the `migrate` command against a disposable PostgreSQL 18+ database.
+The normal test workflow runs on branch pushes and pull requests, not tag
+pushes, so the tagged commit must already have passed `main` CI.
+
+The workflow trigger accepts the broad `v*.*.*` pattern and does not enforce
+annotated tags, stable SemVer, or metadata alignment. Maintainers must verify
+those release-policy requirements before pushing a tag; an invalid tag could
+otherwise update moving Docker aliases including `latest`.

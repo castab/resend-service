@@ -48,7 +48,7 @@ jobs:
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=resend-service
-            org.opencontainers.image.description=Resend webhook ingestion and topic-centered email conversation service.
+            org.opencontainers.image.description=Kotlin/http4k port of the Resend conversation service; see release notes for capability status.
             org.opencontainers.image.source=https://github.com/castab/resend-service
 
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

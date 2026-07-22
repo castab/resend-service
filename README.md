@@ -1,93 +1,162 @@
 # resend-service
 
-`resend-service` is a PostgreSQL-backed Kotlin/http4k application targeting Java
-25 and GraalVM Native Image. It retains the existing HTTP paths, OpenAPI document,
-database schema, and immutable SQL migration history while moving away from the
-previous Node.js/Express runtime.
+`resend-service` is a PostgreSQL-backed Kotlin/http4k application targeting
+Java 25 and GraalVM Native Image. This branch is migrating the service away
+from the previous Node.js/Express runtime while retaining the v1 route paths,
+database schema, and immutable Flyway migration history.
+
+The Kotlin work is currently unreleased at `0.3.0-SNAPSHOT`. Published stable
+images through `0.2.0` contain the former Express runtime.
+
+## Current status
+
+This is a partial runtime port and is not ready for production email traffic.
+
+| Capability | Current behavior |
+| --- | --- |
+| `GET /api/health/v1` | Implemented; reports aggregate configuration and database connectivity only |
+| `GET /openapi.json` | Serves the current implementation contract |
+| `GET /docs` | Serves a Swagger UI shell that loads Swagger assets from unpkg |
+| Conversation reads and writes | Bearer authentication is enforced, then the operation returns `501` |
+| Outbox enqueue and drain | Scoped bearer authentication is enforced, then the operation returns `501` |
+| Resend webhook ingress | Returns `501` without reading or verifying the request |
+
+Health can return `200` while the email operations above remain unavailable. It
+is currently a configuration/database readiness signal, not proof that the
+email workflow port is complete.
+
+Database configuration is initialized before Jetty starts. A malformed or
+initially unreachable non-null `DATABASE_URL` can therefore prevent the server
+and health route from starting rather than producing a health `503`.
+
+The intended conversation, webhook, threading, idempotency, and outbox rules
+remain acceptance criteria in `AGENTS.md`. They must not be presented as
+implemented until their JDBC and Resend ports and integration tests land.
 
 ## Stack
 
-- Kotlin with a Java 25 toolchain
-- http4k with the Jetty server backend
-- Reflection-free `kotlinx.serialization` JSON codecs
-- Hoplite with type-safe HOCON configuration
-- JDBC/HikariCP and Flyway
+- Kotlin 2.3 with a Java 25 toolchain
+- http4k with Jetty
+- `kotlinx.serialization`
+- Hoplite HOCON configuration
+- JDBC, HikariCP, and Flyway
 - Kotest
-- GraalVM Native Image (`--no-fallback`, `--gc=serial`, `-O3`)
+- GraalVM Native Image (`--no-fallback`, Serial GC, `-O3`)
 
-Open this repository as a Gradle project in IntelliJ IDEA and select JDK 25. No
-generated sources are required.
-
-## API compatibility and cutover status
-
-The health, webhook, conversation, outbox, OpenAPI, and documentation paths are
-registered exactly as in v0.2. Conversation and drain authentication boundaries
-are retained. `GET /api/health/v1`, `GET /openapi.json`, and `GET /docs` are
-implemented. In this first native-runtime cutover, conversation persistence,
-Resend sends, outbox draining, and webhook verification/projection deliberately
-return `501` after authentication. They must not be deployed for production email
-traffic until their JDBC ports land; an error preserves retry behavior and is
-safer than acknowledging incomplete work.
-
-Flyway executes immutable checked-in migrations from
-`src/main/resources/db/migration`, numbered sequentially from `V001` so their
-order remains obvious.
+Open this repository as a Gradle project in IntelliJ IDEA and select JDK 25.
+No generated sources are required.
 
 ## Development
+
+Run the unit tests and JVM application:
 
 ```bash
 ./gradlew test
 ./gradlew run
 ```
 
-Configuration is loaded and type-checked by Hoplite from the classpath
-`application.conf`. The checked-in resource at
-`src/main/resources/application.conf` contains the runtime config shape and
-supports optional environment-variable substitutions for container and
-deployment environments. `application.example.conf` documents the same shape in
-plain HOCON:
+In Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
-```hocon
-port = 3000
-host = "0.0.0.0"
+Configuration is loaded by Hoplite from the classpath resource
+`src/main/resources/application.conf`. Runtime values are supplied with these
+environment variables:
 
-databaseUrl = "postgresql://postgres:postgres@localhost:5432/resend_test"
-resendApiKey = "re_xxxxxxxxx"
-webhookSecret = "whsec_xxxxxxxxx"
-resendFrom = "Mailbox <mailbox@example.com>"
-resendReplyTo = "mailbox@replies.example.com"
-conversationApiKey = "replace-with-a-long-random-secret"
-outboxDrainApiKey = "replace-with-another-long-random-secret"
+| Variable | Purpose | Current use |
+| --- | --- | --- |
+| `PORT` | HTTP listen port; defaults to `3000` | Applied to Jetty |
+| `HOST` | Intended listen host; defaults to `0.0.0.0` | Loaded and logged, but not yet applied to Jetty |
+| `DATABASE_URL` | PostgreSQL URI such as `postgresql://user:pass@host:5432/db` | Pool creation, migrations, and health |
+| `RESEND_API_KEY` | Resend credential | Required for healthy status; provider calls are not ported |
+| `RESEND_WEBHOOK_SECRET` | Svix signing secret | Required for healthy status; verification is not ported |
+| `RESEND_FROM` | Server-controlled sender | Required for healthy status; sends are not ported |
+| `RESEND_REPLY_TO` | Reply routing mailbox | Required for healthy status; sends are not ported |
+| `CONVERSATION_API_KEY` | Conversation API bearer credential | Authentication and health |
+| `OUTBOX_DRAIN_API_KEY` | Dedicated drain bearer credential | Authentication and health |
+
+`application.example.conf` documents the equivalent HOCON shape. It is a
+reference file, not an automatically loaded external configuration file.
+
+Run Flyway explicitly before starting the server:
+
+```bash
+./gradlew run --args=migrate
 ```
 
-Maintainer-only variables that are not part of the main runtime `Config`
-object, such as `TEST_DATABASE_URL` and `RESEND_API_BASE_URL`, remain
-environment-driven.
-
-Run migrations with `./gradlew run --args=migrate`. Swagger UI is exposed at
-`/docs`, with the unchanged OpenAPI 3 contract at `/openapi.json`.
+Normal application startup does not run migrations. Flyway uses the immutable
+migrations under `src/main/resources/db/migration`. PostgreSQL 18 or newer is
+required because the schema uses native `uuidv7()`.
 
 ## Native image and Docker
 
+Use a GraalVM 25 JDK with `native-image` installed for a local native build:
+
 ```bash
-./gradlew nativeCompile
+./gradlew nativeCompile --no-configuration-cache
 docker build -t resend-service .
-docker run --rm -e DATABASE_URL="$DATABASE_URL" resend-service migrate
-docker run --rm -p 3000:3000 --env-file .env resend-service
 ```
 
-The multi-stage build compiles with GraalVM 25 and runs as a non-root user in a
-small Oracle Linux image. The container starts with a 16 MiB initial heap and a
-128 MiB hard maximum: this leaves practical headroom for Flyway, HikariCP, TLS,
-and PostgreSQL metadata while preventing unbounded heap growth. Native-image
-uses the low-overhead Serial GC, and http4k uses streaming bodies rather than
-buffering payloads in memory. Native-image metadata explicitly retains the HOCON,
-OpenAPI, Swagger, and Flyway resources plus the reflected configuration model.
-PostgreSQL 18+ is required for native `uuidv7()`.
+The GraalVM Gradle plugin is currently incompatible with this project's enabled
+configuration cache, so native builds must include
+`--no-configuration-cache`. The Dockerfile already does this.
 
-## Test-port status
+Run migrations and then start the container with a runtime environment file:
 
-Provider-neutral RFC Message-ID, subject, ancestry, address, route exposure,
-health aggregation, and authentication objectives are ported to Kotest. The old
-PostgreSQL/fake-Resend integration scenarios are deferred with the JDBC
-conversation, outbox, and webhook implementations described above.
+```bash
+docker run --rm --env-file path/to/runtime.env resend-service migrate
+docker run --rm -p 3000:3000 --env-file path/to/runtime.env resend-service
+```
+
+The multi-stage image runs as a non-root user on Oracle Linux. The native image
+uses Serial GC with a 16 MiB initial heap and a 128 MiB maximum. The release
+workflow currently publishes `linux/amd64` images only.
+
+For local PostgreSQL, run `docker compose up -d postgresql`. The application is
+behind the Compose `apps` profile. Supply all runtime values for health to
+return `200`:
+
+```bash
+docker compose --profile apps up --build
+```
+
+Compose does not run migrations automatically. Its `depends_on` setting does
+not wait for PostgreSQL readiness, so migrate the database and confirm it is
+accepting connections before starting the application profile.
+
+## Railway
+
+`railway.json` builds the Dockerfile, runs `/app/resend-service migrate` as a
+pre-deploy command, checks `/api/health/v1` for up to 120 seconds, and restarts
+failed deployments up to three times. Configure every health-required variable
+before deployment. The health check still does not make the unfinished email
+operations production-ready.
+
+## API documentation
+
+- Current OpenAPI contract: `src/main/resources/public/openapi.json`
+- Consumer integration status: `docs/api-consumer-guide.md`
+- Portable agent handoff: `docs/api-agent-handoff.md`
+- Browser UI: `/docs`
+
+The OpenAPI contract describes the partial Kotlin runtime, not the former
+Express implementation or the target post-port API.
+
+Validate documentation changes with:
+
+```bash
+npx --yes markdownlint-cli2 "**/*.md" "#.opencode/node_modules/**"
+npx --yes @redocly/cli lint src/main/resources/public/openapi.json \
+  --skip-rule info-license \
+  --skip-rule operation-2xx-response \
+  --skip-rule operation-4xx-response
+```
+
+The skipped response rules assume every operation has both 2xx and 4xx
+responses; that would misrepresent the current `501`-only stubs.
+
+## Test coverage
+
+The current Kotest suite covers aggregate unavailable health, representative
+conversation/drain authentication checks, HOCON loading, and provider-neutral
+threading helpers. It does not yet include PostgreSQL, fake-Resend, webhook,
+conversation, or outbox integration tests. The threading helpers are not
+connected to HTTP operations yet.
