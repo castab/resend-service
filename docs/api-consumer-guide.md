@@ -220,7 +220,7 @@ Consistency:
 | `POST` | `/api/conversations/v1/{conversationId}/messages/outbox` | Enqueue a reply | Bearer `CONVERSATION_API_KEY` | `202`, `200` | `400`, `401`, `404`, `409`, `500`, `502`, `503` | Required `Idempotency-Key`; global across send modes |
 | `GET` | `/api/conversations/v1/topics/{topicType}/{externalTopicId}` | Read a conversation by external topic | Bearer `CONVERSATION_API_KEY` | `200` | `400`, `401`, `404`, `500` | None |
 
-The machine-readable contract in `public/openapi.json` is authoritative for field schemas.
+The machine-readable OpenAPI contract published by `resend-service` is authoritative for field schemas.
 
 ## Authentication and authorization
 
@@ -257,6 +257,7 @@ The machine-readable contract in `public/openapi.json` is authoritative for fiel
 ## Request conventions
 
 - Content type: JSON bodies are accepted by application routes through `request.json()`. The implementation does not enforce `Content-Type`, but clients should send `Content-Type: application/json`.
+- Health checks: `GET /api/health/v1` accepts no query parameters; any query string returns `400`.
 - Identifiers:
   - `conversationId` and `messageId` are UUIDs.
   - `topicType` matches `^[a-z][a-z0-9_-]{0,63}$`.
@@ -508,7 +509,7 @@ or, on replay of a failed or indeterminate stored request:
 ## Compatibility and versioning
 
 - Current API version: `v1`
-- Contract file: `public/openapi.json`
+- Contract file: published upstream `openapi.json`
 - OpenAPI version: `3.1.1`
 - Contract/package version observed in repository: `0.0.1`
 - Release notes: `CHANGELOG.md`
@@ -540,7 +541,7 @@ Required runtime configuration on the `resend-service` side:
 - `CONVERSATION_API_KEY`
 - `OUTBOX_DRAIN_API_KEY`
 
-Optional/test-related configuration on the `resend-service` side:
+Configuration names observed for maintainers and private test environments, not normal consumer integrations:
 
 - `RESEND_API_BASE_URL`
 - `TEST_DATABASE_URL`
@@ -556,12 +557,6 @@ upgrading versions:
    environment.
 5. Review upstream release notes and contract diffs before adopting a new
    version.
-
-Maintainer-only note:
-
-- Repository-local `npm`, Prisma, Docker Compose, and integration-test commands
-  are intentionally omitted here because this guide is meant to be copyable
-  into another service repository.
 
 ## Consumer examples
 
@@ -748,10 +743,10 @@ curl -i \
 - Service documentation says an external API gateway controls public exposure,
   but no gateway config is published with the service contract. The
   application itself exposes all routes on the application host.
-- The implementation accepts some more-permissive inputs than the contract advertises, especially lenient `limit` parsing on GET endpoints.
+- The implementation accepts some more-permissive inputs than the contract advertises, especially lenient `limit` parsing on GET endpoints. The public contract remains strict: consumers should send integer `limit` values from `1` through `100`.
 - Unknown request object properties are allowed by both the schema and the implementation, and they do not affect idempotency comparison.
-- Topic lookup does not enforce the documented 255-character maximum for `externalTopicId`.
-- Webhook runtime validation is prefix-based, not full schema validation.
+- Topic lookup does not enforce the documented 255-character maximum for `externalTopicId`; create and assignment operations do enforce it. The public contract remains 255 characters across topic identities.
+- Webhook runtime validation is prefix-based, not full schema validation. Signed `email.*`, `contact.*`, or `domain.*` events outside the documented enum can reach persistence and fail with implementation-dependent results; consumers should only send the documented Resend event types.
 - Some uncaught infrastructure failures may not return the documented JSON error envelope.
 - No formal client timeout recommendation is published.
 - No formal backward-compatibility or deprecation policy is published beyond `v1` path versioning.
