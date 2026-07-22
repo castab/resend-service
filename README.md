@@ -10,28 +10,26 @@ images through `0.2.0` contain the former Express runtime.
 
 ## Current status
 
-This is a partial runtime port and is not ready for production email traffic.
+The Kotlin/http4k runtime is a complete port of the previous Express service.
+The HTTP API is backward compatible with `0.2.0`; only the underlying stack
+changed (Kotlin/http4k + JDBI + GraalVM in place of Express + Prisma/Node).
 
 | Capability | Current behavior |
 | --- | --- |
-| `GET /api/health/v1` | Implemented; reports aggregate configuration and database connectivity only |
-| `GET /openapi.json` | Serves the current implementation contract |
+| `GET /api/health/v1` | Aggregate configuration + database readiness (`ok` / `unhealthy`) |
+| `GET /openapi.json` | Serves the full OpenAPI 3.1 contract |
 | `GET /docs` | Serves a Swagger UI shell that loads Swagger assets from unpkg |
-| Conversation reads and writes | Bearer authentication is enforced, then the operation returns `501` |
-| Outbox enqueue and drain | Scoped bearer authentication is enforced, then the operation returns `501` |
-| Resend webhook ingress | Returns `501` without reading or verifying the request |
-
-Health can return `200` while the email operations above remain unavailable. It
-is currently a configuration/database readiness signal, not proof that the
-email workflow port is complete.
+| Conversation reads and writes | Bearer-authenticated create, list, get, assign, and topic lookup |
+| Synchronous and outbox sends | Persisted send intent, Resend delivery, RFC threading, idempotency |
+| Outbox enqueue and drain | Scoped-bearer drain with fixed batches, leasing, and retry backoff |
+| Resend webhook ingress | Svix-verified ingestion with delivery-state and inbound projection |
 
 Database configuration is initialized before Jetty starts. A malformed or
 initially unreachable non-null `DATABASE_URL` can therefore prevent the server
 and health route from starting rather than producing a health `503`.
 
-The intended conversation, webhook, threading, idempotency, and outbox rules
-remain acceptance criteria in `AGENTS.md`. They must not be presented as
-implemented until their JDBC and Resend ports and integration tests land.
+The conversation, webhook, threading, idempotency, and outbox rules in
+`AGENTS.md` describe the behavior this runtime enforces.
 
 ## Stack
 
@@ -66,12 +64,14 @@ environment variables:
 | `PORT` | HTTP listen port; defaults to `3000` | Applied to Jetty |
 | `HOST` | Intended listen host; defaults to `0.0.0.0` | Loaded and logged, but not yet applied to Jetty |
 | `DATABASE_URL` | PostgreSQL URI such as `postgresql://user:pass@host:5432/db` | Pool creation, migrations, and health |
-| `RESEND_API_KEY` | Resend credential | Required for healthy status; provider calls are not ported |
-| `RESEND_WEBHOOK_SECRET` | Svix signing secret | Required for healthy status; verification is not ported |
-| `RESEND_FROM` | Server-controlled sender | Required for healthy status; sends are not ported |
-| `RESEND_REPLY_TO` | Reply routing mailbox | Required for healthy status; sends are not ported |
+| `RESEND_API_KEY` | Resend credential | Authenticates send/retrieve calls; required for healthy status |
+| `RESEND_API_BASE_URL` | Optional Resend base-URL override (defaults to `https://api.resend.com`) | Used by the Resend client; primarily for tests |
+| `RESEND_WEBHOOK_SECRET` | Svix signing secret | Webhook signature verification; required for healthy status |
+| `RESEND_FROM` | Server-controlled sender | Applied to every send; required for healthy status |
+| `RESEND_REPLY_TO` | Reply routing mailbox | Conversation reply-to routing tokens; required for healthy status |
 | `CONVERSATION_API_KEY` | Conversation API bearer credential | Authentication and health |
 | `OUTBOX_DRAIN_API_KEY` | Dedicated drain bearer credential | Authentication and health |
+| `TEST_DATABASE_URL` | Disposable PostgreSQL for integration tests | Enables the integration Kotest specs |
 
 `application.example.conf` documents the equivalent HOCON shape. It is a
 reference file, not an automatically loaded external configuration file.
@@ -137,26 +137,28 @@ operations production-ready.
 - Portable agent handoff: `docs/api-agent-handoff.md`
 - Browser UI: `/docs`
 
-The OpenAPI contract describes the partial Kotlin runtime, not the former
-Express implementation or the target post-port API.
+The OpenAPI contract describes the implemented Kotlin runtime, whose HTTP API is
+backward compatible with the former Express implementation.
 
 Validate documentation changes with:
 
 ```bash
 npx --yes markdownlint-cli2 "**/*.md" "#.opencode/node_modules/**"
 npx --yes @redocly/cli lint src/main/resources/public/openapi.json \
-  --skip-rule info-license \
-  --skip-rule operation-2xx-response \
-  --skip-rule operation-4xx-response
+  --skip-rule info-license
 ```
-
-The skipped response rules assume every operation has both 2xx and 4xx
-responses; that would misrepresent the current `501`-only stubs.
 
 ## Test coverage
 
-The current Kotest suite covers aggregate unavailable health, representative
-conversation/drain authentication checks, HOCON loading, and provider-neutral
-threading helpers. It does not yet include PostgreSQL, fake-Resend, webhook,
-conversation, or outbox integration tests. The threading helpers are not
-connected to HTTP operations yet.
+The Kotest suite has two layers. Unit specs cover validation, RFC threading,
+reply-to routing, Svix verification, idempotency hashing, HOCON loading, and the
+health/authentication boundaries. Integration specs — gated on
+`TEST_DATABASE_URL` and skipped when it is unset — run against PostgreSQL and an
+in-process fake Resend server, exercising conversation create/read/reply, the
+outbox enqueue-and-drain engine, and Svix-verified webhook projection end to
+end. CI provides a PostgreSQL 18 service container so the integration specs run
+on every push.
+
+```bash
+TEST_DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/db sh ./gradlew test
+```

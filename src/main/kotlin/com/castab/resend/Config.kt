@@ -8,6 +8,7 @@ data class Config(
     val host: String = "0.0.0.0",
     val databaseUrl: String? = null,
     val resendApiKey: String? = null,
+    val resendApiBaseUrl: String? = null,
     val webhookSecret: String? = null,
     val resendFrom: String? = null,
     val resendReplyTo: String? = null,

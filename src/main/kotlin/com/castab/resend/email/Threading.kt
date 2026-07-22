@@ -12,7 +12,15 @@ fun normalizeSubject(value: String): String {
 }
 
 fun replySubject(value: String) = "Re: ${normalizeSubject(value)}"
+fun createReplySubject(value: String) = replySubject(value)
 fun buildReferences(ancestry: List<String>, parent: String) = (ancestry + parent).distinct()
+
+/** Case-insensitive header lookup over a raw header map (mirrors the Express `getHeader`). */
+fun getHeader(headers: Map<String, String>?, name: String): String? {
+    if (headers == null) return null
+    val target = name.lowercase()
+    return headers.entries.firstOrNull { it.key.lowercase() == target }?.value
+}
 
 data class Mailbox(val address: String, val name: String?)
 fun parseAddress(value: String): Mailbox {

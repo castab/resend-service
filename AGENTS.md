@@ -2,17 +2,17 @@
 
 ## Current Port Status
 
-- The Kotlin runtime currently implements configuration, database pool creation,
-  explicit Flyway migration, health, static API documentation, and
-  conversation/drain authentication boundaries.
-- Conversation and outbox operations return `501` after successful
-  authentication. The webhook route always returns `501` and does not verify
-  requests.
-- Treat the webhook, conversation, database, and email rules below as required
-  acceptance criteria for completing the port, not as claims of current
-  behavior.
-- Do not infer implemented behavior from the retained migrations or historical
-  schemas. Verify every documented capability against Kotlin routes and tests.
+- The Kotlin/http4k runtime implements the full conversation, outbox, and
+  webhook surface that the previous Express runtime exposed: configuration,
+  database pool creation, explicit Flyway migration, health, static API
+  documentation, bearer/drain authentication, synchronous and outbox sending
+  via Resend, RFC threading, the transactional outbox drain engine, and
+  Svix-verified webhook ingestion with delivery-state and inbound projection.
+- The data layer uses JDBI (Fluent API with explicit row mappers) over the
+  Hikari pool; the Resend client uses http4k's OkHttp client; Svix signature
+  verification is implemented with the JDK crypto primitives.
+- The rules below are enforced behavior. Keep them true when changing code, and
+  verify every capability against the Kotlin routes and the Kotest suite.
 
 ## Application Boundaries
 
@@ -80,8 +80,10 @@
   route or behavior change. `/docs` and `/openapi.json` are supporting resources
   described in the guides rather than OpenAPI operations.
 - Preserve explicit webhook and outbox-drain security overrides in OpenAPI.
-- When database integration tests are restored, require a dedicated disposable
-  `TEST_DATABASE_URL`, truncate application tables, and keep tests serial while
-  they share PostgreSQL and the fake Resend server.
-- Current tests are unit-level Kotest specs and do not use PostgreSQL or a fake
-  Resend server.
+- Database integration tests require a dedicated disposable `TEST_DATABASE_URL`,
+  truncate application tables between tests, and stay serial while they share
+  PostgreSQL and the in-process fake Resend server. They are skipped when
+  `TEST_DATABASE_URL` is unset.
+- Tests are Kotest specs: unit-level specs (validation, threading, routing,
+  Svix, idempotency hashing) plus `TEST_DATABASE_URL`-gated integration specs
+  that exercise PostgreSQL and the fake Resend server end to end.
