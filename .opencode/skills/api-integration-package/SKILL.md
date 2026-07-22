@@ -7,7 +7,7 @@ description: OpenAPI, api-consumer-guide.md, api-agent-handoff.md, contract extr
 
 Use this skill only for `resend-service` when the task is to research and update the consumer-facing API package:
 
-- `public/openapi.json`
+- `src/main/resources/public/openapi.json`
 - `docs/api-consumer-guide.md`
 - `docs/api-agent-handoff.md`
 
@@ -25,25 +25,15 @@ Inspect these first:
 
 - `AGENTS.md`
 - `README.md`
-- `package.json`
-- `.env.example`
-- `public/openapi.json`
+- `application.example.conf`
 - `docs/api-consumer-guide.md`
 - `docs/api-agent-handoff.md`
-- `src/app/api/**/route.ts`
-- `src/lib/api.ts`
-- `src/lib/send-validation.ts`
-- `src/lib/conversation-service.ts`
-- `src/lib/outbox-service.ts`
-- `src/lib/webhook-handler.ts`
-- `src/lib/verify-webhook.ts`
-- `src/lib/email/**`
-- `prisma/schema.prisma`
-- `prisma/migrations/**`
-- `tests/integration/**`
-- `tests/helpers/**`
-- `tests/fake-resend-server.ts`
-- `vitest.config.ts`
+- `src/main/kotlin/com/castab/resend/**`
+- `src/main/resources/application.conf`
+- `src/main/resources/db/migration/**`
+- `src/main/resources/public/openapi.json`
+- `src/test/kotlin/com/castab/resend/**`
+- `src/test/resources/**`
 
 ## Core Rules
 
@@ -54,7 +44,7 @@ Inspect these first:
    - Unresolved questions or gaps
 3. Do not invent endpoints, fields, status codes, guarantees, or business rules.
 4. Do not expose secret values, credentials, or sensitive message content from local environment files.
-5. Derive environment-variable names from code, `.env.example`, README, and checked-in docs. Avoid reading ignored local env files unless the user explicitly asks.
+5. Derive environment-variable names and runtime config shape from code, `application.example.conf`, README, and checked-in docs. Avoid reading ignored local env files unless the user explicitly asks.
 6. Preserve the contract as strict public behavior when implementation is more permissive. Record the mismatch in the guides instead of broadening the contract without evidence.
 7. Treat unknown framework-generated failures as unresolved if the application does not control the response body.
 8. Keep copied consumer-facing docs portable. Do not require downstream readers to have this repository's local scripts, Docker Compose setup, OpenCode skills, or command files.
@@ -94,7 +84,7 @@ Do not add `/docs` or `/openapi.json` to the OpenAPI contract. They may be refer
 
 ### 2. Reconcile the contract
 
-Update `public/openapi.json` so it matches supported behavior.
+Update `src/main/resources/public/openapi.json` so it matches supported behavior.
 
 Include:
 
@@ -131,7 +121,7 @@ It must explain:
 
 When implementation and contract disagree, say so explicitly.
 
-Do not include repository-local `npm`, Prisma, Docker Compose, or integration
+Do not include repository-local Gradle, Docker Compose, or integration
 test commands in `docs/api-consumer-guide.md`. If those commands are relevant,
 keep them in maintainer-only docs instead of the copied consumer guide.
 
@@ -158,25 +148,18 @@ handoff must still make sense after being copied into a different repository.
 Run these with explicit timeouts because long-running processes are known to hang on this machine:
 
 ```bash
-npm run db:validate
-npm run api:validate
-npm run lint
-npm run build
+./gradlew test
 ```
 
 For integration tests, confirm the test database is disposable before running:
 
 ```bash
-npm run db:setup
-npm run dev:test
-npm run test:postgresql
+./gradlew test
 ```
 
 Notes:
 
-- `db:setup` uses Prisma CLI and reads `.env`.
-- `dev:test` explicitly loads `.env.test`.
-- Ensure the disposable database configuration is available to both before running destructive tests.
+- Ensure the disposable database configuration is available before running destructive tests.
 - Always apply explicit tool timeouts to shell commands in this repository.
 
 These validation commands are for the agent updating this repository. They are

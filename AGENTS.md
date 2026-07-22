@@ -42,11 +42,10 @@
 
 ## Database
 
-- Treat `prisma/schema.prisma` and checked-in migrations as authoritative.
+- Treat checked-in Flyway migrations under `src/main/resources/db/migration` as authoritative.
 - Add migrations; never edit deployed migration history.
 - Preserve UUIDv7 primary keys and all webhook, message, and outbox idempotency
   constraints.
-- Never edit or commit `src/generated/prisma`.
 - Run the relevant Gradle tests after schema changes.
 - Treat all email-related columns as sensitive and avoid logging values.
 

@@ -3,7 +3,7 @@
 `resend-service` is a PostgreSQL-backed Kotlin/http4k application targeting Java
 25 and GraalVM Native Image. It retains the existing HTTP paths, OpenAPI document,
 database schema, and immutable SQL migration history while moving away from the
-Node.js/Express/Prisma runtime.
+previous Node.js/Express runtime.
 
 ## Stack
 
@@ -29,9 +29,9 @@ return `501` after authentication. They must not be deployed for production emai
 traffic until their JDBC ports land; an error preserves retry behavior and is
 safer than acknowledging incomplete work.
 
-The Prisma schema remains as domain documentation. Flyway executes immutable
-copies of all checked-in migrations from `src/main/resources/db/migration`,
-numbered sequentially from `V001` so their order remains obvious.
+Flyway executes immutable checked-in migrations from
+`src/main/resources/db/migration`, numbered sequentially from `V001` so their
+order remains obvious.
 
 ## Development
 
@@ -41,20 +41,28 @@ numbered sequentially from `V001` so their order remains obvious.
 ```
 
 Configuration is loaded and type-checked by Hoplite from the classpath
-`application.conf`. The checked-in file uses optional HOCON substitutions, so
-the container environment remains compatible with the previous image:
+`application.conf`. The checked-in resource at
+`src/main/resources/application.conf` contains the runtime config shape and
+supports optional environment-variable substitutions for container and
+deployment environments. `application.example.conf` documents the same shape in
+plain HOCON:
 
-```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/resend_test
-RESEND_API_KEY=re_xxxxxxxxx
-RESEND_WEBHOOK_SECRET=whsec_xxxxxxxxx
-RESEND_FROM=Mailbox <mailbox@example.com>
-RESEND_REPLY_TO=mailbox@replies.example.com
-CONVERSATION_API_KEY=replace-with-a-long-random-secret
-OUTBOX_DRAIN_API_KEY=replace-with-another-long-random-secret
-PORT=3000
-HOST=0.0.0.0
+```hocon
+port = 3000
+host = "0.0.0.0"
+
+databaseUrl = "postgresql://postgres:postgres@localhost:5432/resend_test"
+resendApiKey = "re_xxxxxxxxx"
+webhookSecret = "whsec_xxxxxxxxx"
+resendFrom = "Mailbox <mailbox@example.com>"
+resendReplyTo = "mailbox@replies.example.com"
+conversationApiKey = "replace-with-a-long-random-secret"
+outboxDrainApiKey = "replace-with-another-long-random-secret"
 ```
+
+Maintainer-only variables that are not part of the main runtime `Config`
+object, such as `TEST_DATABASE_URL` and `RESEND_API_BASE_URL`, remain
+environment-driven.
 
 Run migrations with `./gradlew run --args=migrate`. Swagger UI is exposed at
 `/docs`, with the unchanged OpenAPI 3 contract at `/openapi.json`.

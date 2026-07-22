@@ -7,7 +7,7 @@ Use the `api-integration-package` skill and update this repository's consumer-fa
 
 Scope:
 
-- `public/openapi.json`
+- `src/main/resources/public/openapi.json`
 - `docs/api-consumer-guide.md`
 - `docs/api-agent-handoff.md`
 
@@ -17,18 +17,14 @@ Requirements:
 - Do not change runtime API behavior unless explicitly requested.
 - Clearly distinguish supported behavior, observed implementation behavior, and unresolved issues.
 - Preserve strict public contract semantics when runtime behavior is more permissive, then document the discrepancy in the guides.
-- Keep `docs/api-consumer-guide.md` and `docs/api-agent-handoff.md` portable when copied into another repository. Do not require downstream readers to have this repository's `npm` scripts, Docker Compose setup, OpenCode skill files, or command files.
+- Keep `docs/api-consumer-guide.md` and `docs/api-agent-handoff.md` portable when copied into another repository. Do not require downstream readers to have this repository's Gradle commands, Docker Compose setup, OpenCode skill files, or command files.
 - Use explicit timeouts on shell commands because long-running processes can hang on this machine.
 - Confirm the test database is disposable before destructive integration-test commands.
 
 Validation target:
 
 ```text
-npm run db:validate
-npm run api:validate
-npm run lint
-npm run build
-npm run test:postgresql
+./gradlew test
 ```
 
 Additional user instructions:
@@ -37,4 +33,4 @@ Additional user instructions:
 $ARGUMENTS
 ```
 
-- Treat `src/routes` handlers and the Express transport registration in `src/server.ts` as the authoritative HTTP implementation.
+- Treat the http4k routes in `src/main/kotlin/com/castab/resend` and the checked-in OpenAPI document as the authoritative HTTP implementation.
