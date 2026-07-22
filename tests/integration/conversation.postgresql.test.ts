@@ -77,7 +77,7 @@ describe('Private conversation API', () => {
     expect(asset.status).toBe(200);
     const contract = await fetch(`${TEST_CONFIG.appBaseUrl}/openapi.json`);
     expect(contract.status).toBe(200);
-    expect((await contract.json()).openapi).toBe('3.1.0');
+    expect((await contract.json()).openapi).toBe('3.1.1');
 
     const unsupported = await fetch(`${baseUrl}/outbox`, {
       method: 'GET',

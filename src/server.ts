@@ -129,6 +129,11 @@ export function createApp() {
     rawBody,
     adapt(enqueueConversation),
   );
+  app.all(
+    '/api/conversations/v1/outbox',
+    requireConversationAuth,
+    (_request, response) => response.status(404).json({ error: 'Not found' }),
+  );
   app.get(
     '/api/conversations/v1/topics/:topicType/:externalTopicId',
     requireConversationAuth,
