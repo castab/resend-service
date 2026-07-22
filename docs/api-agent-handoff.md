@@ -63,40 +63,28 @@ This service is the source of truth for topic-centered email conversations, outb
 ## Consumer integration checklist
 
 When copying this handoff into another service, validate your own integration
-instead of relying on `resend-service` repository commands.
+against the upstream contract and your target environment.
 
 1. Store the correct base URL and bearer credential for the environment.
 2. Keep a stable `Idempotency-Key` for each logical send or enqueue attempt.
 3. Confirm your request shapes still match the latest upstream OpenAPI contract.
-4. Exercise the workflows you use in a non-production environment:
-   - create a conversation
-   - reply in a conversation
-   - queue outbox work if you use asynchronous sending
-   - drain outbox work if your system owns that responsibility
-   - fetch the conversation afterward and verify stored state transitions
+4. Exercise the workflows you use in a non-production environment: create, reply, queue, drain, and fetch afterward as applicable.
 5. Sanitize returned HTML before rendering it anywhere user-visible.
 6. Diff upstream contract and release-note changes before upgrading versions.
-
-## Maintainer-only notes
-
-The following items are specific to the `resend-service` repository and should
-not be copied into a consumer repository as runnable instructions:
-
-- local `npm` validation/build commands
-- local Prisma setup commands
-- local integration test commands
-- local agent skills or command files
 
 ## Known unresolved issues
 
 - External gateway exposure rules are not published with the service contract.
 - Runtime request handling is more permissive than the contract in some places,
-  especially query `limit` parsing.
+  especially query `limit` parsing. Consumers should follow the strict OpenAPI
+  schema and send integer limits from `1` through `100`.
 - Unknown request object properties are allowed by both the contract and the
   implementation, and they do not affect idempotency comparison.
-- Topic lookup does not enforce the documented `externalTopicId` max length.
+- Topic lookup does not enforce the documented `externalTopicId` max length,
+  although create and assignment operations do.
 - Webhook runtime validation is prefix-based rather than full schema
-  validation.
+  validation; only the documented Resend event enums are supported public
+  contract.
 - Some uncaught infrastructure failures may not return the documented JSON
   error body.
 - No formal deprecation or compatibility policy exists beyond `v1` routing.

@@ -459,6 +459,21 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateConversationRequest"
+              },
+              "example": {
+                "topic": {
+                  "type": "booking",
+                  "externalId": "4821",
+                  "title": "Booking 4821"
+                },
+                "participant": {
+                  "email": "person@example.com",
+                  "name": "Person"
+                },
+                "message": {
+                  "text": "Opening message",
+                  "replyToName": "Support Team"
+                }
               }
             }
           }
@@ -526,6 +541,9 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/DrainOutboxRequest"
+              },
+              "example": {
+                "limit": 100
               }
             }
           }
@@ -965,6 +983,11 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateMessageRequest"
+              },
+              "example": {
+                "text": "Queued reply",
+                "replyToMessageId": "019808b9-37c4-7ed7-93c5-8960f0b690ab",
+                "replyToName": "Support Team"
               }
             }
           }
@@ -1194,6 +1217,7 @@
       "Limit": {
         "name": "limit",
         "in": "query",
+        "description": "Public contract for read pagination. Send an integer from 1 through 100; clients must not rely on the current implementation's lenient parsing of invalid values.",
         "schema": {
           "type": "integer",
           "minimum": 1,
@@ -1204,7 +1228,7 @@
       "Before": {
         "name": "before",
         "in": "query",
-        "description": "Return messages older than this internal message ID.",
+        "description": "Return messages older than this internal message ID. The ID must belong to the requested conversation.",
         "schema": {
           "type": "string",
           "format": "uuid"
@@ -1233,7 +1257,8 @@
           "externalId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 255
+            "maxLength": 255,
+            "description": "Public contract maximum is 255 characters. The topic lookup route currently only rejects empty values; clients must keep this field within the documented contract. Path usage requires URL encoding."
           },
           "title": {
             "type": "string",
