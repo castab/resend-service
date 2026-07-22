@@ -753,3 +753,7 @@ curl -i \
 - No correlation/request ID header is defined.
 - Health-check behavior, successful unassigned-list pagination, and several input edge cases are not covered by integration tests.
 - Provider-sourced inbound address fields can be malformed or empty in edge cases, while the contract documents the intended normal shape.
+
+## Service transport
+
+The service uses an Express 5 HTTP transport. This runtime detail does not change the documented URLs, authentication schemes, request bodies, or response contracts.

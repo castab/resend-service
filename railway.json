@@ -9,9 +9,9 @@
       "/public/**",
       "/package.json",
       "/package-lock.json",
-      "/next.config.ts",
       "/prisma.config.ts",
       "/tsconfig.json",
+      "/tsconfig.build.json",
       "/.dockerignore",
       "/Dockerfile"
     ]
