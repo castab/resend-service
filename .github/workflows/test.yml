@@ -18,8 +18,8 @@ jobs:
           java-version: '25'
           cache: gradle
       - name: Test and build JVM distribution
-        run: ./gradlew test shadowJar
+        run: sh ./gradlew test shadowJar
       - name: Build native executable
-        run: ./gradlew nativeCompile --no-configuration-cache
+        run: sh ./gradlew nativeCompile --no-configuration-cache
       - name: Build production image
         run: docker build -t resend-service:test .

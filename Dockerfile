@@ -4,7 +4,7 @@ WORKDIR /workspace
 COPY gradle gradle
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY src src
-RUN --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon nativeCompile --no-configuration-cache
+RUN --mount=type=cache,target=/root/.gradle sh ./gradlew --no-daemon nativeCompile --no-configuration-cache
 
 FROM oraclelinux:9-slim AS runner
 RUN microdnf install -y shadow-utils && microdnf clean all && useradd --system --uid 1001 app
