@@ -11,6 +11,8 @@ Versioning.
 
 - Added outbound delivery-state projection from Resend lifecycle webhooks while
   preserving provider send acceptance as the existing message `state`.
+- Added optional per-message Reply-To display names for conversation sends and
+  outbox sends.
 
 ## [0.0.1] - 2026-07-21
 

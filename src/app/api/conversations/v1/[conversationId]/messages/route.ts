@@ -164,6 +164,7 @@ export async function POST(
           fromName: from.name,
           toAddress: conversation.participantAddress,
           replyToAddress,
+          replyToName: validation.value.replyToName ?? null,
           subject: createReplySubject(conversation.subject),
           textBody: validation.value.text,
           htmlBody: validation.value.html,

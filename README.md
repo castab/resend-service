@@ -71,9 +71,10 @@ The former `/api/webhooks/v1/resend` path remains intentionally unavailable.
 A caller-owned `(topicType, externalTopicId)` pair identifies a conversation.
 Each conversation currently has one external participant and one configured
 sender mailbox. Each conversation has an opaque routing token and a stable
-Reply-To address under the configured receiving mailbox. Messages retain
-provider and RFC identifiers, ordered reply ancestry, send state, projected
-outbound delivery state, content, and timestamps.
+Reply-To address under the configured receiving mailbox. Each outbound message
+may add its own Reply-To display name while preserving that generated address.
+Messages retain provider and RFC identifiers, ordered reply ancestry, send
+state, projected outbound delivery state, content, and timestamps.
 
 Asynchronous sends persist the same pending message rows used by synchronous
 sends. Outbox rows coordinate fixed, ordered Resend batches and bounded retries
@@ -116,7 +117,9 @@ OUTBOX_DRAIN_API_KEY=replace-with-another-long-random-secret
 `RESEND_REPLY_TO` must be a plain mailbox on a Resend Receiving domain, without
 a display name or existing `+` tag. Resend must accept every generated
 `mailbox+c_<token>@domain` address. Keep this value stable while previously sent
-messages can still receive replies. `RESEND_API_BASE_URL` is optional and
+messages can still receive replies. API callers can provide per-message
+Reply-To display names, which are formatted only in outbound provider requests.
+`RESEND_API_BASE_URL` is optional and
 intended for a Resend-compatible test endpoint. The health route requires every
 variable above and database access; it returns `503` if any application
 capability is not configured.

@@ -35,8 +35,9 @@ Preconditions:
 Sequence:
 
 1. `POST /api/conversations/v1`
-2. Store returned `conversationId` and `message.id`.
-3. If later needed, hydrate with `GET /api/conversations/v1/topics/{topicType}/{externalTopicId}` or `GET /api/conversations/v1/{conversationId}`.
+2. Optionally specify `message.replyToName` to send the opening message with a display name for the generated Reply-To address.
+3. Store returned `conversationId` and `message.id`.
+4. If later needed, hydrate with `GET /api/conversations/v1/topics/{topicType}/{externalTopicId}` or `GET /api/conversations/v1/{conversationId}`.
 
 Expected outcome:
 
@@ -72,7 +73,8 @@ Sequence:
 
 1. `POST /api/conversations/v1/{conversationId}/messages`
 2. Optionally specify `replyToMessageId`; otherwise the service selects the latest `accepted` or `received` message.
-3. Read the updated conversation if needed.
+3. Optionally specify `replyToName` to send that message with a display name for the generated Reply-To address.
+4. Read the updated conversation if needed.
 
 Expected outcome:
 
@@ -277,6 +279,7 @@ The machine-readable contract in `public/openapi.json` is authoritative for fiel
   - Topic titles, participant names, and subjects reject ASCII control characters.
   - Topic titles must contain at least one non-whitespace character after trimming.
   - Message `text` and `html` must be nonempty strings when present.
+  - Optional `replyToName` is per message, rejects ASCII control characters and `<`/`>`, is limited to 256 characters, and blank or null values are omitted.
   - Blank optional `participant.name` becomes `null`.
   - Blank optional `subject` is omitted and defaults to the normalized topic title.
   - String length checks use JavaScript string length, including the 1 MiB body limit and the 255/256-character header-field limits.
@@ -441,6 +444,7 @@ or, on replay of a failed or indeterminate stored request:
 - Duplicate-request behavior:
   - Same key + same normalized request returns existing persisted state.
   - Same key + different normalized request returns `409`.
+  - Omitted, blank, and null `replyToName` values are normalized as absent; a nonblank alias participates in idempotency comparison.
 - At-least-once effects:
   - Webhooks are at-least-once and duplicate deliveries are expected.
   - Outbox drain is designed for repeated invocation.
@@ -607,6 +611,7 @@ Success response:
     },
     "to": "person@example.com",
     "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
+    "replyToName": null,
     "subject": "Booking 4821",
     "text": "Your booking request was received.",
     "html": null,
@@ -645,7 +650,8 @@ curl -i \
   -H "Idempotency-Key: booking-4821-reply-1" \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Here is the requested update."
+    "text": "Here is the requested update.",
+    "replyToName": "Brayan"
   }'
 ```
 
@@ -670,7 +676,8 @@ curl -i \
       "name": "Person"
     },
     "message": {
-      "text": "Opening message"
+      "text": "Opening message",
+      "replyToName": "Brayan"
     }
   }'
 ```

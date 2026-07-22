@@ -180,13 +180,32 @@ function formatAddress(address: string, name: string | null): string {
   return name ? `${name} <${address}>` : address;
 }
 
+const DISPLAY_NAME_PHRASE_PATTERN =
+  /^[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~]+(?: [A-Za-z0-9!#$%&'*+\-/=?^_`{|}~]+)*$/;
+
+function formatReplyToAddress(address: string, name: string | null): string {
+  if (!name) {
+    return address;
+  }
+  if (DISPLAY_NAME_PHRASE_PATTERN.test(name)) {
+    return `${name} <${address}>`;
+  }
+  const escaped = name.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return `"${escaped}" <${address}>`;
+}
+
 export function buildSendEmailInput(message: EmailMessage): SendEmailInput {
   return {
     from: formatAddress(message.fromAddress, message.fromName),
     to: [message.toAddress],
     ...(message.replyToAddress === null
       ? {}
-      : { reply_to: message.replyToAddress }),
+      : {
+          reply_to: formatReplyToAddress(
+            message.replyToAddress,
+            message.replyToName,
+          ),
+        }),
     subject: message.subject,
     ...(message.textBody === null ? {} : { text: message.textBody }),
     ...(message.htmlBody === null ? {} : { html: message.htmlBody }),
