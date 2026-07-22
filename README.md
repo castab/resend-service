@@ -2,7 +2,7 @@
 
 [![Docker Hub](https://img.shields.io/docker/pulls/castab/resend-service?label=Docker%20Hub)](https://hub.docker.com/r/castab/resend-service) [![Docker Image Version](https://img.shields.io/docker/v/castab/resend-service?sort=semver&label=version)](https://hub.docker.com/r/castab/resend-service/tags)
 
-`resend-service` is one PostgreSQL-backed Next.js application for receiving
+`resend-service` is one PostgreSQL-backed Express application for receiving
 Resend webhooks and managing topic-centered email conversations. An external
 API gateway controls which paths are publicly reachable; authentication and
 signature verification remain enforced by the application.
@@ -32,7 +32,7 @@ check, OpenAPI contract, Docker image, and Railway service configuration.
 ```text
 prisma/                 # Prisma schema and immutable migration history
 public/openapi.json     # Unified OpenAPI contract
-src/app/                # Next.js routes and Swagger UI
+src/routes/                # Express routes and Swagger UI
 src/lib/database/       # Prisma client construction and exports
 src/lib/email/          # Resend client, webhook types, projection, threading
 src/lib/                # HTTP authentication, validation, and services
@@ -204,7 +204,7 @@ docker run --rm -p 3000:3000 --env-file .env resend-service
 ```
 
 The image contains Prisma migration tooling, schema, migrations, public assets,
-and the standalone Next.js server.
+and the standalone Express server.
 
 Published releases are also available on Docker Hub as
 `castab/resend-service`.

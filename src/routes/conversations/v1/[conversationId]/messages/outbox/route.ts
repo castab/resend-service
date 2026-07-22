@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import {
   authorize,
   isUuid,
@@ -29,7 +28,7 @@ export async function POST(
 
   const idempotencyKey = request.headers.get('idempotency-key');
   if (!idempotencyKey || idempotencyKey.length > 256) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'A valid Idempotency-Key header is required' },
       { status: 400 },
     );
@@ -40,15 +39,12 @@ export async function POST(
   }
   const validation = validateMessageBody(parsed.value);
   if ('error' in validation) {
-    return NextResponse.json({ error: validation.error }, { status: 400 });
+    return Response.json({ error: validation.error }, { status: 400 });
   }
 
   const { conversationId } = await context.params;
   if (!isUuid(conversationId)) {
-    return NextResponse.json(
-      { error: 'Invalid conversation ID' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Invalid conversation ID' }, { status: 400 });
   }
   const client = getPrismaClient();
   const requestHash = hashSendRequest({
@@ -64,7 +60,7 @@ export async function POST(
       existing.requestHash !== requestHash ||
       existing.conversationId !== conversationId
     ) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Idempotency key was already used for a different request' },
         { status: 409 },
       );
@@ -76,10 +72,7 @@ export async function POST(
     where: { id: conversationId },
   });
   if (!conversation) {
-    return NextResponse.json(
-      { error: 'Conversation not found' },
-      { status: 404 },
-    );
+    return Response.json({ error: 'Conversation not found' }, { status: 404 });
   }
   const parent = validation.value.replyToMessageId
     ? await client.emailMessage.findFirst({
@@ -93,10 +86,7 @@ export async function POST(
         orderBy: [{ emailCreatedAt: 'desc' }, { id: 'desc' }],
       });
   if (!parent) {
-    return NextResponse.json(
-      { error: 'Reply parent not found' },
-      { status: 404 },
-    );
+    return Response.json({ error: 'Reply parent not found' }, { status: 404 });
   }
 
   let parentInternetMessageId: string | null;
@@ -107,13 +97,13 @@ export async function POST(
       'Failed to retrieve reply parent metadata:',
       error instanceof Error ? error.message : 'Unknown error',
     );
-    return NextResponse.json(
+    return Response.json(
       { error: 'Reply parent threading metadata is unavailable' },
       { status: 503 },
     );
   }
   if (!parentInternetMessageId) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'Reply parent threading metadata is unavailable' },
       { status: 409 },
     );
@@ -126,10 +116,7 @@ export async function POST(
     !configuredReplyTo ||
     !isValidReplyToBaseAddress(configuredReplyTo)
   ) {
-    return NextResponse.json(
-      { error: 'Server misconfiguration' },
-      { status: 500 },
-    );
+    return Response.json({ error: 'Server misconfiguration' }, { status: 500 });
   }
   const from = parseAddress(configuredFrom);
   const replyToAddress = buildConversationReplyTo(
@@ -175,7 +162,7 @@ export async function POST(
       `;
       return message;
     });
-    return NextResponse.json(
+    return Response.json(
       { conversationId, message: serializeMessage(pending) },
       { status: 202 },
     );
@@ -194,7 +181,7 @@ export async function POST(
       ) {
         return sendResultResponse(raced, conversationId);
       }
-      return NextResponse.json(
+      return Response.json(
         { error: 'Idempotency key is already in use' },
         { status: 409 },
       );

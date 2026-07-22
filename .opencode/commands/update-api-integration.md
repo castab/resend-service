@@ -36,3 +36,5 @@ Additional user instructions:
 ```text
 $ARGUMENTS
 ```
+
+- Treat `src/routes` handlers and the Express transport registration in `src/server.ts` as the authoritative HTTP implementation.

@@ -1,10 +1,9 @@
-import { NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/database';
 import { isValidReplyToBaseAddress } from '@/lib/email';
 
 export async function GET(request: Request) {
   if (new URL(request.url).search) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'Health check does not accept query parameters' },
       { status: 400 },
     );
@@ -19,13 +18,13 @@ export async function GET(request: Request) {
     !process.env.CONVERSATION_API_KEY ||
     !process.env.OUTBOX_DRAIN_API_KEY
   ) {
-    return NextResponse.json({ status: 'unhealthy' }, { status: 503 });
+    return Response.json({ status: 'unhealthy' }, { status: 503 });
   }
 
   try {
     await getPrismaClient().$queryRaw`SELECT 1`;
-    return NextResponse.json({ status: 'ok' });
+    return Response.json({ status: 'ok' });
   } catch {
-    return NextResponse.json({ status: 'unhealthy' }, { status: 503 });
+    return Response.json({ status: 'unhealthy' }, { status: 503 });
   }
 }

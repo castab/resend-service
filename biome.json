@@ -89,8 +89,6 @@
       "**",
       "!**/dist",
       "!**/package-lock.json",
-      "!**/next-env.d.ts",
-      "!**/.next",
       "!**/src/generated/prisma",
       "!**/schemas/**/*"
     ]

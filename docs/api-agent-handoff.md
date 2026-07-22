@@ -91,3 +91,7 @@ against the upstream contract and your target environment.
 
 See the upstream consumer guide for workflow details, error semantics,
 environment setup, and examples.
+
+## Transport implementation
+
+The API is served by Express 5. Route behavior lives under `src/routes`, while route ordering, request-body policy, local Swagger assets, and terminal JSON errors are configured in `src/server.ts`.

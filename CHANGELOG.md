@@ -22,3 +22,5 @@ Versioning.
 
 - Initial public release process with SemVer metadata, changelog tracking, and
   tag-triggered Docker Hub publication guidance.
+
+- Migrated the application runtime from Next.js to Express 5 while preserving the public API contract and local Swagger UI.

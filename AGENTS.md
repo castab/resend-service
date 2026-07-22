@@ -2,8 +2,8 @@
 
 ## Application Boundaries
 
-- This repository contains one deployable Next.js application.
-- Keep API routes under `src/app/api` and provider-neutral email behavior under
+- This repository contains one deployable Express application.
+- Keep API routes under `src/routes` and provider-neutral email behavior under
   `src/lib/email`.
 - Keep Prisma access and generated-client exports under `src/lib/database`.
 - Use the API gateway to control external route exposure; do not weaken

@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { authorize, getConversationResponse } from '@/lib/api';
 
 export async function GET(
@@ -14,10 +13,7 @@ export async function GET(
 
   const { topicType, externalTopicId } = await context.params;
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(topicType) || !externalTopicId) {
-    return NextResponse.json(
-      { error: 'Invalid topic identity' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Invalid topic identity' }, { status: 400 });
   }
   return getConversationResponse(request, {
     topicType_externalTopicId: { topicType, externalTopicId },

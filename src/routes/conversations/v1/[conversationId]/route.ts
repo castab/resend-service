@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import {
   authorize,
   getConversationResponse,
@@ -20,10 +19,7 @@ export async function GET(
   }
   const { conversationId } = await context.params;
   if (!isUuid(conversationId)) {
-    return NextResponse.json(
-      { error: 'Invalid conversation ID' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Invalid conversation ID' }, { status: 400 });
   }
   return getConversationResponse(request, { id: conversationId });
 }
@@ -42,15 +38,12 @@ export async function PATCH(
   }
   const topic = validateTopic(parsed.value);
   if ('error' in topic) {
-    return NextResponse.json({ error: topic.error }, { status: 400 });
+    return Response.json({ error: topic.error }, { status: 400 });
   }
 
   const { conversationId } = await context.params;
   if (!isUuid(conversationId)) {
-    return NextResponse.json(
-      { error: 'Invalid conversation ID' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Invalid conversation ID' }, { status: 400 });
   }
   const client = getPrismaClient();
 
@@ -71,7 +64,7 @@ export async function PATCH(
       const existing = await client.emailConversation.findUnique({
         where: { id: conversationId },
       });
-      return NextResponse.json(
+      return Response.json(
         {
           error: existing
             ? 'Conversation is already assigned to a topic'
@@ -86,7 +79,7 @@ export async function PATCH(
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     ) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'A conversation already exists for this topic' },
         { status: 409 },
       );

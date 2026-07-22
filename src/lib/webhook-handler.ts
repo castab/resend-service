@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import {
   type ContactWebhookEvent,
   type DomainWebhookEvent,
@@ -38,7 +37,7 @@ export function createWebhookHandler<TClient>(
 
     if (!secret) {
       console.error('Missing RESEND_WEBHOOK_SECRET environment variable');
-      return NextResponse.json(
+      return Response.json(
         { error: 'Server misconfiguration' },
         { status: 500 },
       );
@@ -49,7 +48,7 @@ export function createWebhookHandler<TClient>(
     const svixSignature = request.headers.get('svix-signature');
 
     if (!svixId || !svixTimestamp || !svixSignature) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Missing required Svix headers' },
         { status: 400 },
       );
@@ -66,7 +65,7 @@ export function createWebhookHandler<TClient>(
 
     if (!result.success) {
       console.error('Webhook verification failed:', result.error);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Invalid webhook signature' },
         { status: 401 },
       );
@@ -87,17 +86,14 @@ export function createWebhookHandler<TClient>(
       } else {
         const _exhaustiveCheck: never = event;
         console.warn('Unknown event type:', _exhaustiveCheck);
-        return NextResponse.json(
-          { error: 'Unknown event type' },
-          { status: 400 },
-        );
+        return Response.json({ error: 'Unknown event type' }, { status: 400 });
       }
 
-      return NextResponse.json({ received: true }, { status: 200 });
+      return Response.json({ received: true }, { status: 200 });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Database insertion failed:', message);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Failed to process webhook' },
         { status: 500 },
       );

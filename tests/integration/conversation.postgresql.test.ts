@@ -34,6 +34,58 @@ describe('Private conversation API', () => {
     expect(response.status).toBe(401);
   });
 
+  it('checks authentication and idempotency before malformed JSON', async () => {
+    const unauthorized = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const missingKey = await fetch(baseUrl, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${TEST_CONFIG.conversationApiKey}`,
+        'content-type': 'application/json',
+      },
+      body: '{',
+    });
+    expect(missingKey.status).toBe(400);
+    await expect(missingKey.json()).resolves.toEqual({
+      error: 'A valid Idempotency-Key header is required',
+    });
+
+    const malformed = await fetch(baseUrl, {
+      method: 'POST',
+      headers: headers('malformed-json'),
+      body: '{',
+    });
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toEqual({
+      error: 'Request body must be valid JSON',
+    });
+  });
+
+  it('serves local API documentation and transport fallbacks', async () => {
+    const docs = await fetch(`${TEST_CONFIG.appBaseUrl}/docs`);
+    expect(docs.status).toBe(200);
+    expect(await docs.text()).toContain('/docs/assets/swagger-ui-bundle.js');
+
+    const asset = await fetch(
+      `${TEST_CONFIG.appBaseUrl}/docs/assets/swagger-ui-bundle.js`,
+    );
+    expect(asset.status).toBe(200);
+    const contract = await fetch(`${TEST_CONFIG.appBaseUrl}/openapi.json`);
+    expect(contract.status).toBe(200);
+    expect((await contract.json()).openapi).toBe('3.1.0');
+
+    const unsupported = await fetch(`${baseUrl}/outbox`, {
+      method: 'GET',
+      headers: headers(),
+    });
+    expect(unsupported.status).toBe(404);
+  });
+
   it('starts, continues, and hydrates a topic conversation', async () => {
     const created = await createConversation('create-booking-4821');
     expect(created.response.status).toBe(201);

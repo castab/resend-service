@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import {
   authorize,
   readJson,
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
 
   const idempotencyKey = request.headers.get('idempotency-key');
   if (!idempotencyKey || idempotencyKey.length > 256) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'A valid Idempotency-Key header is required' },
       { status: 400 },
     );
@@ -39,7 +38,7 @@ export async function POST(request: Request) {
   }
   const validation = validateCreateBody(parsed.value);
   if ('error' in validation) {
-    return NextResponse.json({ error: validation.error }, { status: 400 });
+    return Response.json({ error: validation.error }, { status: 400 });
   }
 
   const configuredFrom = process.env.RESEND_FROM;
@@ -49,10 +48,7 @@ export async function POST(request: Request) {
     !configuredReplyTo ||
     !isValidReplyToBaseAddress(configuredReplyTo)
   ) {
-    return NextResponse.json(
-      { error: 'Server misconfiguration' },
-      { status: 500 },
-    );
+    return Response.json({ error: 'Server misconfiguration' }, { status: 500 });
   }
 
   const client = getPrismaClient();
@@ -65,7 +61,7 @@ export async function POST(request: Request) {
   });
   if (existing) {
     if (existing.requestHash !== requestHash) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Idempotency key was already used for a different request' },
         { status: 409 },
       );
@@ -117,7 +113,7 @@ export async function POST(request: Request) {
       },
       include: { messages: true },
     });
-    return NextResponse.json(
+    return Response.json(
       {
         conversationId: created.id,
         message: serializeMessage(created.messages[0]),
@@ -134,7 +130,7 @@ export async function POST(request: Request) {
       });
       if (raced) {
         if (raced.requestHash !== requestHash) {
-          return NextResponse.json(
+          return Response.json(
             {
               error: 'Idempotency key was already used for a different request',
             },
@@ -165,7 +161,7 @@ export async function POST(request: Request) {
           if (racedReopen && racedReopen.requestHash === requestHash) {
             return sendResultResponse(racedReopen, racedReopen.conversationId);
           }
-          return NextResponse.json(
+          return Response.json(
             { error: 'Idempotency key is already in use' },
             { status: 409 },
           );
@@ -176,7 +172,7 @@ export async function POST(request: Request) {
         const message = await client.emailMessage.findUniqueOrThrow({
           where: { id: reopened.messageId },
         });
-        return NextResponse.json(
+        return Response.json(
           {
             conversationId: reopened.conversationId,
             message: serializeMessage(message),
@@ -184,7 +180,7 @@ export async function POST(request: Request) {
           { status: 202 },
         );
       }
-      return NextResponse.json(
+      return Response.json(
         { error: 'A conversation already exists for this topic' },
         { status: 409 },
       );

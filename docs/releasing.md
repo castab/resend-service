@@ -64,3 +64,5 @@ Run `npm run release:validate` before opening or merging a release PR.
 - Set these GitHub Actions secrets before publishing:
   - `DOCKERHUB_USERNAME`
   - `DOCKERHUB_TOKEN`
+
+The release image runs the bundled Node 22 ESM Express server from `dist/server.js`; verify both the non-default `PORT` smoke test and Prisma migration command before publishing.

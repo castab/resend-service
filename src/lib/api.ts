@@ -1,5 +1,4 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { NextResponse } from 'next/server';
 import {
   type EmailConversation,
   type EmailMessage,
@@ -8,7 +7,7 @@ import {
 } from '@/lib/database';
 import { buildConversationReplyTo } from '@/lib/email';
 
-export function authorize(request: Request): NextResponse | null {
+export function authorize(request: Request): Response | null {
   return authorizeWithCredential(
     request,
     process.env.CONVERSATION_API_KEY,
@@ -16,7 +15,7 @@ export function authorize(request: Request): NextResponse | null {
   );
 }
 
-export function authorizeOutboxDrain(request: Request): NextResponse | null {
+export function authorizeOutboxDrain(request: Request): Response | null {
   return authorizeWithCredential(
     request,
     process.env.OUTBOX_DRAIN_API_KEY,
@@ -28,13 +27,10 @@ function authorizeWithCredential(
   request: Request,
   expected: string | undefined,
   variableName: string,
-): NextResponse | null {
+): Response | null {
   if (!expected) {
     console.error(`Missing ${variableName} environment variable`);
-    return NextResponse.json(
-      { error: 'Server misconfiguration' },
-      { status: 500 },
-    );
+    return Response.json({ error: 'Server misconfiguration' }, { status: 500 });
   }
 
   const authorization = request.headers.get('authorization') ?? '';
@@ -43,7 +39,7 @@ function authorizeWithCredential(
   const providedHash = createHash('sha256').update(provided).digest();
 
   if (!provided || !timingSafeEqual(expectedHash, providedHash)) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'Unauthorized' },
       { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } },
     );
@@ -54,12 +50,12 @@ function authorizeWithCredential(
 
 export async function readJson(
   request: Request,
-): Promise<{ value: unknown } | { response: NextResponse }> {
+): Promise<{ value: unknown } | { response: Response }> {
   try {
     return { value: await request.json() };
   } catch {
     return {
-      response: NextResponse.json(
+      response: Response.json(
         { error: 'Request body must be valid JSON' },
         { status: 400 },
       ),
@@ -186,7 +182,7 @@ export function sendResultResponse(
 ) {
   const failed =
     message.state === 'FAILED' || message.state === 'INDETERMINATE';
-  return NextResponse.json(
+  return Response.json(
     {
       ...(failed ? { error: 'Email was not confirmed as sent' } : {}),
       conversationId,
@@ -215,19 +211,13 @@ export async function getConversationResponse(
   const client = getPrismaClient();
   const conversation = await client.emailConversation.findUnique({ where });
   if (!conversation) {
-    return NextResponse.json(
-      { error: 'Conversation not found' },
-      { status: 404 },
-    );
+    return Response.json({ error: 'Conversation not found' }, { status: 404 });
   }
 
   const limit = getPageLimit(request);
   const beforeId = new URL(request.url).searchParams.get('before');
   if (beforeId && !isUuid(beforeId)) {
-    return NextResponse.json(
-      { error: 'Invalid message cursor' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Invalid message cursor' }, { status: 400 });
   }
   const before = beforeId
     ? await client.emailMessage.findFirst({
@@ -235,10 +225,7 @@ export async function getConversationResponse(
       })
     : null;
   if (beforeId && !before) {
-    return NextResponse.json(
-      { error: 'Invalid message cursor' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Invalid message cursor' }, { status: 400 });
   }
 
   const messages = await client.emailMessage.findMany({
@@ -258,7 +245,7 @@ export async function getConversationResponse(
   });
   const hasMoreBefore = messages.length > limit;
   const page = messages.slice(0, limit).reverse();
-  return NextResponse.json(
+  return Response.json(
     serializeConversation(conversation, page, hasMoreBefore),
   );
 }
