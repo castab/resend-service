@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-21
+
+### Changed
+
+- Migrated the application runtime from Next.js to Express 5 while preserving
+  the public API contract and local Swagger UI.
+
 ## [0.1.0] - 2026-07-21
 
 ### Added
@@ -22,5 +29,3 @@ Versioning.
 
 - Initial public release process with SemVer metadata, changelog tracking, and
   tag-triggered Docker Hub publication guidance.
-
-- Migrated the application runtime from Next.js to Express 5 while preserving the public API contract and local Swagger UI.
