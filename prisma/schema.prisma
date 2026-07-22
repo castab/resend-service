@@ -68,6 +68,7 @@ model EmailMessage {
   fromName                    String?             @map("from_name")
   toAddress                   String              @map("to_address")
   replyToAddress              String?             @map("reply_to_address")
+  replyToName                 String?             @map("reply_to_name")
   subject                     String
   textBody                    String?             @map("text_body")
   htmlBody                    String?             @map("html_body")

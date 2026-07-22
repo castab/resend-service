@@ -44,6 +44,7 @@ describe('Private conversation API', () => {
     expect(resendServer.sends[0].input.reply_to).toBe(
       created.body.message.replyTo,
     );
+    expect(created.body.message.replyToName).toBeNull();
 
     const replyResponse = await fetch(
       `${baseUrl}/${created.body.conversationId}/messages`,
@@ -57,6 +58,7 @@ describe('Private conversation API', () => {
     expect(replyResponse.status).toBe(201);
     expect(reply.message.parentMessageId).toBe(created.body.message.id);
     expect(reply.message.replyTo).toBe(created.body.message.replyTo);
+    expect(reply.message.replyToName).toBeNull();
     expect(resendServer.sends[1].input.reply_to).toBe(
       created.body.message.replyTo,
     );
@@ -78,6 +80,56 @@ describe('Private conversation API', () => {
     expect(hydrated.messages).toHaveLength(2);
     expect(hydrated.replyToAddress).toBe(created.body.message.replyTo);
     expect(hydrated.messages[1].parentMessageId).toBe(hydrated.messages[0].id);
+  });
+
+  it('formats per-message Reply-To aliases for Resend', async () => {
+    const created = await createConversation(
+      'reply-to-alias-opening',
+      createBody('Booking 4821', { replyToName: 'Brayan "Bookings"' }),
+    );
+
+    expect(created.response.status).toBe(201);
+    expect(created.body.message.replyToName).toBe('Brayan "Bookings"');
+    expect(created.body.message.replyTo).toMatch(/@replies\.example\.com$/);
+    expect(resendServer.sends[0].input.reply_to).toBe(
+      `"Brayan \\"Bookings\\"" <${created.body.message.replyTo}>`,
+    );
+
+    const replyResponse = await fetch(
+      `${baseUrl}/${created.body.conversationId}/messages`,
+      {
+        method: 'POST',
+        headers: headers('reply-to-alias-reply'),
+        body: JSON.stringify({
+          text: 'This is the reply.',
+          replyToName: 'Support Team',
+        }),
+      },
+    );
+    const reply = await replyResponse.json();
+
+    expect(replyResponse.status).toBe(201);
+    expect(reply.message.replyTo).toBe(created.body.message.replyTo);
+    expect(reply.message.replyToName).toBe('Support Team');
+    expect(resendServer.sends[1].input.reply_to).toBe(
+      `Support Team <${created.body.message.replyTo}>`,
+    );
+  });
+
+  it('rejects unsafe Reply-To aliases', async () => {
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: headers('unsafe-reply-to-alias'),
+      body: JSON.stringify(
+        createBody('Booking 4821', { replyToName: 'Brayan\r\nBcc: x@y.test' }),
+      ),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe(
+      'message.replyToName must be a header-safe string of at most 256 characters',
+    );
   });
 
   it('reconciles delivery webhooks that arrive before send acceptance', async () => {
@@ -270,7 +322,9 @@ describe('Private conversation API', () => {
   });
 
   it('drains queued messages through one ordered Resend batch', async () => {
-    const first = await queueConversation('batch-first', 'batch-1');
+    const first = await queueConversation('batch-first', 'batch-1', {
+      replyToName: 'Batch One',
+    });
     const second = await queueConversation('batch-second', 'batch-2');
 
     const drained = await drainOutbox(100);
@@ -294,7 +348,10 @@ describe('Private conversation API', () => {
     ]);
     expect(
       resendServer.batches[0].inputs.map(({ reply_to }) => reply_to),
-    ).toEqual([first.body.message.replyTo, second.body.message.replyTo]);
+    ).toEqual([
+      `Batch One <${first.body.message.replyTo}>`,
+      second.body.message.replyTo,
+    ]);
     const { rows } = await database.query(
       `SELECT state, resend_email_id
        FROM email_messages
@@ -535,20 +592,27 @@ describe('Private conversation API', () => {
     expect([first.status, second.status].sort()).toEqual([200, 409]);
   });
 
-  async function createConversation(idempotencyKey: string) {
+  async function createConversation(
+    idempotencyKey: string,
+    body = createBody(),
+  ) {
     const response = await fetch(baseUrl, {
       method: 'POST',
       headers: headers(idempotencyKey),
-      body: JSON.stringify(createBody()),
+      body: JSON.stringify(body),
     });
     return { response, body: await response.json() };
   }
 
-  async function queueConversation(idempotencyKey: string, externalId: string) {
+  async function queueConversation(
+    idempotencyKey: string,
+    externalId: string,
+    messageOverrides: Record<string, string> = {},
+  ) {
     const response = await fetch(`${baseUrl}/outbox`, {
       method: 'POST',
       headers: headers(idempotencyKey),
-      body: JSON.stringify(createBodyForTopic(externalId)),
+      body: JSON.stringify(createBodyForTopic(externalId, messageOverrides)),
     });
     return { response, body: await response.json() };
   }
@@ -589,15 +653,21 @@ function expectRoutingAddress(value: string) {
   );
 }
 
-function createBody(title = 'Booking 4821') {
+function createBody(
+  title = 'Booking 4821',
+  messageOverrides: Record<string, string> = {},
+) {
   return {
     topic: { type: 'booking', externalId: '4821', title },
     participant: { email: 'person@example.com', name: 'Person' },
-    message: { text: 'Opening message' },
+    message: { text: 'Opening message', ...messageOverrides },
   };
 }
 
-function createBodyForTopic(externalId: string) {
+function createBodyForTopic(
+  externalId: string,
+  messageOverrides: Record<string, string> = {},
+) {
   return {
     topic: {
       type: 'booking',
@@ -605,6 +675,6 @@ function createBodyForTopic(externalId: string) {
       title: `Booking ${externalId}`,
     },
     participant: { email: 'person@example.com', name: 'Person' },
-    message: { text: 'Opening message' },
+    message: { text: 'Opening message', ...messageOverrides },
   };
 }

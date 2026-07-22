@@ -107,6 +107,7 @@ export async function POST(request: Request) {
             fromName: from.name,
             toAddress: validation.value.participant.email,
             replyToAddress,
+            replyToName: validation.value.message.replyToName ?? null,
             subject,
             textBody: validation.value.message.text,
             htmlBody: validation.value.message.html,
@@ -228,7 +229,7 @@ async function reopenFailedTopicConversation(
     value: {
       topic: { type: string; externalId: string; title: string };
       participant: { email: string; name: string | null };
-      message: { text?: string; html?: string };
+      message: { text?: string; html?: string; replyToName?: string };
     };
     from: { address: string; name: string | null };
     subject: string;
@@ -284,6 +285,7 @@ async function reopenFailedTopicConversation(
           input.configuredReplyTo,
           conversation.routingToken,
         ),
+        replyToName: input.value.message.replyToName ?? null,
         subject: input.subject,
         textBody: input.value.message.text ?? null,
         htmlBody: input.value.message.html ?? null,

@@ -13,8 +13,22 @@ export type CreateConversationInput = {
   topic: { type: string; externalId: string; title: string };
   participant: { email: string; name: string | null };
   subject?: string;
-  message: { text?: string; html?: string };
+  message: { text?: string; html?: string; replyToName?: string };
 };
+
+function normalizeReplyToName(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!isHeaderSafeText(value, MAX_NAME_LENGTH)) {
+    return undefined;
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+  return /[<>]/.test(normalized) ? undefined : normalized;
+}
 
 export function validateCreateBody(
   value: unknown,
@@ -52,6 +66,13 @@ export function validateCreateBody(
   }
   const text = typeof message.text === 'string' ? message.text : undefined;
   const html = typeof message.html === 'string' ? message.html : undefined;
+  const replyToName = normalizeReplyToName(message.replyToName);
+  if (replyToName === undefined) {
+    return {
+      error:
+        'message.replyToName must be a header-safe string of at most 256 characters',
+    };
+  }
   if (!text && !html) {
     return { error: 'message.text or message.html is required' };
   }
@@ -86,21 +107,37 @@ export function validateCreateBody(
       ...(typeof value.subject === 'string' && value.subject.trim()
         ? { subject: value.subject.trim() }
         : {}),
-      message: { ...(text ? { text } : {}), ...(html ? { html } : {}) },
+      message: {
+        ...(text ? { text } : {}),
+        ...(html ? { html } : {}),
+        ...(replyToName ? { replyToName } : {}),
+      },
     },
   };
 }
 
-export function validateMessageBody(
-  value: unknown,
-):
-  | { value: { text?: string; html?: string; replyToMessageId?: string } }
+export function validateMessageBody(value: unknown):
+  | {
+      value: {
+        text?: string;
+        html?: string;
+        replyToMessageId?: string;
+        replyToName?: string;
+      };
+    }
   | { error: string } {
   if (!isRecord(value)) {
     return { error: 'Request body must be an object' };
   }
   const text = typeof value.text === 'string' ? value.text : undefined;
   const html = typeof value.html === 'string' ? value.html : undefined;
+  const replyToName = normalizeReplyToName(value.replyToName);
+  if (replyToName === undefined) {
+    return {
+      error:
+        'replyToName must be a header-safe string of at most 256 characters',
+    };
+  }
   if (!text && !html) {
     return { error: 'text or html is required' };
   }
@@ -124,6 +161,7 @@ export function validateMessageBody(
       ...(typeof value.replyToMessageId === 'string'
         ? { replyToMessageId: value.replyToMessageId }
         : {}),
+      ...(replyToName ? { replyToName } : {}),
     },
   };
 }

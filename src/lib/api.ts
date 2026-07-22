@@ -136,6 +136,7 @@ export function serializeMessage(message: EmailMessage) {
     },
     to: message.toAddress,
     replyTo: message.replyToAddress,
+    replyToName: message.replyToName,
     subject: message.subject,
     text: message.textBody,
     html: message.htmlBody,

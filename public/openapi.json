@@ -284,7 +284,8 @@
                   "name": "Person"
                 },
                 "message": {
-                  "text": "Your booking request was received."
+                  "text": "Your booking request was received.",
+                  "replyToName": "Brayan"
                 }
               }
             }
@@ -656,6 +657,7 @@
                       },
                       "to": "person@example.com",
                       "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
+                      "replyToName": null,
                       "subject": "Booking 4821",
                       "text": "Your booking request was received.",
                       "html": null,
@@ -678,6 +680,7 @@
                       },
                       "to": "person@example.com",
                       "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
+                      "replyToName": null,
                       "subject": "Re: Booking 4821",
                       "text": "Here is the requested update.",
                       "html": null,
@@ -804,7 +807,8 @@
                 "$ref": "#/components/schemas/CreateMessageRequest"
               },
               "example": {
-                "text": "Here is the requested update."
+                "text": "Here is the requested update.",
+                "replyToName": "Brayan"
               }
             }
           }
@@ -881,6 +885,7 @@
                         },
                         "to": "person@example.com",
                         "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
+                        "replyToName": null,
                         "subject": "Re: Booking 4821",
                         "text": "Here is the requested update.",
                         "html": null,
@@ -909,6 +914,7 @@
                         },
                         "to": "person@example.com",
                         "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
+                        "replyToName": null,
                         "subject": "Re: Booking 4821",
                         "text": "Here is the requested update.",
                         "html": null,
@@ -1081,6 +1087,7 @@
                       },
                       "to": "person@example.com",
                       "replyTo": "mailbox+c_8f2a1b9d4f8c4fd2a7319df35a6c041e@replies.example.com",
+                      "replyToName": null,
                       "subject": "Booking 4821",
                       "text": "Your booking request was received.",
                       "html": null,
@@ -1281,6 +1288,12 @@
             "minLength": 1,
             "maxLength": 1048576,
             "description": "HTML body. Must be a nonempty string when present."
+          },
+          "replyToName": {
+            "type": ["string", "null"],
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001F\\u007F<>]{0,256}$",
+            "description": "Optional per-message display name for the service-generated Reply-To address. Blank or null values are omitted. The generated address is unchanged."
           }
         },
         "anyOf": [
@@ -1425,6 +1438,7 @@
           "from",
           "to",
           "replyTo",
+          "replyToName",
           "subject",
           "text",
           "html",
@@ -1507,6 +1521,10 @@
             "type": ["string", "null"],
             "format": "email",
             "description": "For outbound messages, the service-generated conversation routing address. For inbound messages, the sender-provided Reply-To address when present."
+          },
+          "replyToName": {
+            "type": ["string", "null"],
+            "description": "For outbound messages, the optional per-message display name used with the service-generated Reply-To address. Inbound messages currently return null."
           },
           "subject": {
             "type": "string"
