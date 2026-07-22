@@ -17,6 +17,7 @@ Requirements:
 - Do not change runtime API behavior unless explicitly requested.
 - Clearly distinguish supported behavior, observed implementation behavior, and unresolved issues.
 - Preserve strict public contract semantics when runtime behavior is more permissive, then document the discrepancy in the guides.
+- Keep `docs/api-consumer-guide.md` and `docs/api-agent-handoff.md` portable when copied into another repository. Do not require downstream readers to have this repository's `npm` scripts, Docker Compose setup, OpenCode skill files, or command files.
 - Use explicit timeouts on shell commands because long-running processes can hang on this machine.
 - Confirm the test database is disposable before destructive integration-test commands.
 

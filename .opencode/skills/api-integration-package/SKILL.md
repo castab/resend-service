@@ -57,6 +57,7 @@ Inspect these first:
 5. Derive environment-variable names from code, `.env.example`, README, and checked-in docs. Avoid reading ignored local env files unless the user explicitly asks.
 6. Preserve the contract as strict public behavior when implementation is more permissive. Record the mismatch in the guides instead of broadening the contract without evidence.
 7. Treat unknown framework-generated failures as unresolved if the application does not control the response body.
+8. Keep copied consumer-facing docs portable. Do not require downstream readers to have this repository's local scripts, Docker Compose setup, OpenCode skills, or command files.
 
 ## Workflow
 
@@ -124,11 +125,15 @@ It must explain:
 - Consistency and lifecycle behavior
 - Business invariants
 - Compatibility and versioning
-- Local development and validation commands
+- Environment and integration setup from the consumer perspective
 - Consumer examples
 - Known gaps and unresolved questions
 
 When implementation and contract disagree, say so explicitly.
+
+Do not include repository-local `npm`, Prisma, Docker Compose, or integration
+test commands in `docs/api-consumer-guide.md`. If those commands are relevant,
+keep them in maintainer-only docs instead of the copied consumer guide.
 
 ### 4. Update the agent handoff
 
@@ -136,17 +141,17 @@ Keep `docs/api-agent-handoff.md` short and actionable.
 
 Include:
 
-- Contract path
-- Consumer-guide path
-- Skill path
-- Command path
+- Upstream contract and guide sources
 - Primary workflows
 - Authentication summary
 - Key constraints
 - Retry/idempotency rules
-- Validation commands
-- Integration test commands
+- Consumer integration checklist or handoff guidance
 - Unresolved issues
+
+Do not include repository-local skill paths, command paths, validation
+commands, or integration-test commands in `docs/api-agent-handoff.md`. That
+handoff must still make sense after being copied into a different repository.
 
 ## Validation Requirements
 
@@ -173,6 +178,9 @@ Notes:
 - `dev:test` explicitly loads `.env.test`.
 - Ensure the disposable database configuration is available to both before running destructive tests.
 - Always apply explicit tool timeouts to shell commands in this repository.
+
+These validation commands are for the agent updating this repository. They are
+not content requirements for the copied consumer-facing docs.
 
 ## Reporting Requirements
 

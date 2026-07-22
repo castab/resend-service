@@ -503,26 +503,19 @@ or, on replay of a failed or indeterminate stored request:
 - Breaking changes: consumers should monitor `public/openapi.json`, changelog entries, and route version changes.
 - Consumer pinning guidance: pin to a specific Docker or contract version and diff future updates before upgrading.
 
-## Local development
+## Environment and integration setup
 
-Repository-supported setup:
+If you are consuming this API from another repository, treat this section as an
+integration checklist rather than a promise that local `resend-service`
+repository scripts are available.
 
-```bash
-npm ci
-docker compose up -d postgresql
-npm run db:setup
-npm run dev
-```
+Base URL:
 
-Local base URL:
+- Use the deployed host for your target environment.
+- If you are running a private copy of the service yourself, `GET /api/health/v1`
+  is the readiness endpoint.
 
-- `http://localhost:3000`
-
-Health check:
-
-- `GET http://localhost:3000/api/health/v1`
-
-Required environment variables:
+Required runtime configuration on the `resend-service` side:
 
 - `DATABASE_URL`
 - `RESEND_API_KEY`
@@ -532,41 +525,28 @@ Required environment variables:
 - `CONVERSATION_API_KEY`
 - `OUTBOX_DRAIN_API_KEY`
 
-Optional/test-related variables:
+Optional/test-related configuration on the `resend-service` side:
 
 - `RESEND_API_BASE_URL`
 - `TEST_DATABASE_URL`
 - `APP_BASE_URL`
 
-Example local test flow:
+Recommended consumer-side validation before using a new environment or
+upgrading versions:
 
-```bash
-npm run db:setup
-npm run dev:test
-```
+1. Confirm the base URL and bearer credential for the target environment.
+2. Check `GET /api/health/v1` if the endpoint is reachable from your network.
+3. Compare your request payloads against the latest upstream OpenAPI contract.
+4. Exercise the exact workflows your system uses in a non-production
+   environment.
+5. Review upstream release notes and contract diffs before adopting a new
+   version.
 
-Then, in another terminal:
+Maintainer-only note:
 
-```bash
-npm run test:postgresql
-```
-
-Observed setup caveats:
-
-- `npm run db:setup` uses Prisma CLI loading from `.env`, not `.env.test`.
-- `npm run dev:test` explicitly loads `.env.test`.
-- To reproduce the documented test flow safely, ensure the disposable test database URL is available to both the Prisma setup step and the test application process.
-- Although `package.json` says Node `>=22`, the locked Prisma and Redocly toolchain currently requires Node `22.12+` in practice.
-
-Contract and build validation commands used by the repository:
-
-```bash
-npm run db:validate
-npm run api:validate
-npm run lint
-npm run build
-npm run test:postgresql
-```
+- Repository-local `npm`, Prisma, Docker Compose, and integration-test commands
+  are intentionally omitted here because this guide is meant to be copyable
+  into another service repository.
 
 ## Consumer examples
 
@@ -744,7 +724,9 @@ curl -i \
 
 ## Known gaps and unresolved questions
 
-- The repository says an external API gateway controls public exposure, but no gateway config is checked in. The app itself exposes all routes on the application host.
+- Service documentation says an external API gateway controls public exposure,
+  but no gateway config is published with the service contract. The
+  application itself exposes all routes on the application host.
 - The implementation accepts some more-permissive inputs than the contract advertises, especially lenient `limit` parsing on GET endpoints.
 - Unknown request object properties are allowed by both the schema and the implementation, and they do not affect idempotency comparison.
 - Topic lookup does not enforce the documented 255-character maximum for `externalTopicId`.
@@ -755,4 +737,3 @@ curl -i \
 - No correlation/request ID header is defined.
 - Health-check behavior, successful unassigned-list pagination, and several input edge cases are not covered by integration tests.
 - Provider-sourced inbound address fields can be malformed or empty in edge cases, while the contract documents the intended normal shape.
-- The package manifest still says Node `>=22`, but the locked tooling currently needs Node `22.12+`.
