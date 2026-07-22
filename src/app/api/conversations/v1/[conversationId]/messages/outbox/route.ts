@@ -150,6 +150,7 @@ export async function POST(
           parentMessageId: parent.id,
           direction: 'OUTBOUND',
           state: 'PENDING',
+          deliveryState: 'UNKNOWN',
           inReplyToInternetMessageId: parentInternetMessageId,
           referenceInternetMessageIds: references,
           fromAddress: from.address,

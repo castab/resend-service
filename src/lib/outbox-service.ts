@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { type EmailMessage, Prisma, type PrismaClient } from '@/lib/database';
-import { getConfiguredResendClient, ResendApiError } from '@/lib/email';
+import {
+  getConfiguredResendClient,
+  ResendApiError,
+  reconcileOutboundDeliveryState,
+} from '@/lib/email';
 import { buildSendEmailInput } from './conversation-service';
 
 const OUTBOX_LEASE_MS = 2 * 60 * 1000;
@@ -210,6 +214,7 @@ async function finalizeAcceptedBatch(
       UPDATE email_messages AS message
       SET state = 'ACCEPTED',
           state_detail = NULL,
+          delivery_state = 'UNKNOWN',
           resend_email_id = accepted.resend_email_id,
           updated_at = now()
       FROM (VALUES ${accepted}) AS accepted(message_id, resend_email_id)
@@ -218,6 +223,9 @@ async function finalizeAcceptedBatch(
     `;
     if (updated !== batch.messages.length) {
       throw new Error('Outbox message changed before batch completion');
+    }
+    for (const resendEmailId of resendEmailIds) {
+      await reconcileOutboundDeliveryState(transaction, resendEmailId);
     }
     await deleteOwnedBatch(transaction, batch);
   });

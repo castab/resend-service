@@ -72,8 +72,8 @@ A caller-owned `(topicType, externalTopicId)` pair identifies a conversation.
 Each conversation currently has one external participant and one configured
 sender mailbox. Each conversation has an opaque routing token and a stable
 Reply-To address under the configured receiving mailbox. Messages retain
-provider and RFC identifiers, ordered reply ancestry, send state, content, and
-timestamps.
+provider and RFC identifiers, ordered reply ancestry, send state, projected
+outbound delivery state, content, and timestamps.
 
 Asynchronous sends persist the same pending message rows used by synchronous
 sends. Outbox rows coordinate fixed, ordered Resend batches and bounded retries
@@ -82,6 +82,11 @@ headers, including repair when children arrive before their parent. If eligible
 RFC ancestry does not resolve a conversation, the service falls back to the
 conversation token in a `to` or `received_for` address. Token routing still
 requires the inbound sender to match the conversation participant.
+
+Outbound `accepted` state means Resend accepted the send API request. A message
+is only marked delivered after a matching `email.delivered` webhook is projected.
+Opened and clicked events are ingested into the webhook ledger when enabled in
+Resend, but they do not change delivery status.
 
 Attachments are not retrieved or persisted. Returned HTML is untrusted and
 must be sanitized before browser rendering.

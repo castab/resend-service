@@ -129,22 +129,22 @@ export class PostgreSQLTestClient {
            ('test', $1, 'Threaded message', 'Threaded message', $2, now(), now())
          RETURNING id
        ), known_parent AS (
-         INSERT INTO email_messages
-           (conversation_id, direction, state, resend_email_id,
-            internet_message_id, reference_internet_message_ids, from_address,
-            to_address, subject, text_body, email_created_at, updated_at)
-         SELECT id, 'OUTBOUND', 'ACCEPTED', $1 || '-known',
-                '<known-' || $1 || '@resend.test>', '{}',
-                'mailbox@example.com', $2, 'Threaded message',
-                'Earlier message', now() - interval '1 minute', now()
+          INSERT INTO email_messages
+            (conversation_id, direction, state, delivery_state, resend_email_id,
+             internet_message_id, reference_internet_message_ids, from_address,
+             to_address, subject, text_body, email_created_at, updated_at)
+          SELECT id, 'OUTBOUND', 'ACCEPTED', 'UNKNOWN', $1 || '-known',
+                 '<known-' || $1 || '@resend.test>', '{}',
+                 'mailbox@example.com', $2, 'Threaded message',
+                 'Earlier message', now() - interval '1 minute', now()
          FROM conversation
        )
-       INSERT INTO email_messages
-         (conversation_id, direction, state, resend_email_id,
-          reference_internet_message_ids, from_address, to_address, subject,
-          text_body, email_created_at, updated_at)
-       SELECT id, 'OUTBOUND', 'ACCEPTED', $1, '{}', 'mailbox@example.com', $2,
-              'Threaded message', 'Opening message', now(), now()
+        INSERT INTO email_messages
+          (conversation_id, direction, state, delivery_state, resend_email_id,
+           reference_internet_message_ids, from_address, to_address, subject,
+           text_body, email_created_at, updated_at)
+        SELECT id, 'OUTBOUND', 'ACCEPTED', 'UNKNOWN', $1, '{}', 'mailbox@example.com', $2,
+               'Threaded message', 'Opening message', now(), now()
        FROM conversation`,
       [resendEmailId, participantAddress],
     );

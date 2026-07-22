@@ -51,6 +51,17 @@ export interface ClickData {
   userAgent: string;
 }
 
+// Failure details
+export interface FailedData {
+  reason: string;
+}
+
+// Suppression details
+export interface SuppressedData {
+  message?: string;
+  type?: string;
+}
+
 // Email event data (common fields)
 export interface EmailEventData {
   email_id: string;
@@ -64,6 +75,8 @@ export interface EmailEventData {
   // Event-specific fields
   bounce?: BounceData;
   click?: ClickData;
+  failed?: FailedData;
+  suppressed?: SuppressedData;
   message_id?: string;
   cc?: string[];
   bcc?: string[];

@@ -20,6 +20,16 @@ enum EmailMessageState {
   INDETERMINATE
 }
 
+enum EmailDeliveryState {
+  UNKNOWN
+  DELIVERED
+  DELIVERY_DELAYED
+  BOUNCED
+  COMPLAINED
+  SUPPRESSED
+  FAILED
+}
+
 model EmailConversation {
   id                 String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
   routingToken       String         @unique(map: "email_conversations_routing_token_key") @default(dbgenerated("gen_random_uuid()")) @map("routing_token") @db.Uuid
@@ -40,32 +50,36 @@ model EmailConversation {
 }
 
 model EmailMessage {
-  id                       String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  conversationId           String            @map("conversation_id") @db.Uuid
-  parentMessageId          String?           @map("parent_message_id") @db.Uuid
-  direction                EmailDirection
-  state                    EmailMessageState
-  stateDetail              String?           @map("state_detail")
-  resendEmailId            String?           @unique(map: "email_messages_resend_email_id_key") @map("resend_email_id")
-  internetMessageId        String?           @unique(map: "email_messages_internet_message_id_key") @map("internet_message_id")
-  inReplyToInternetMessageId String?          @map("in_reply_to_internet_message_id")
-  referenceInternetMessageIds String[]        @default([]) @map("reference_internet_message_ids")
-  fromAddress              String            @map("from_address")
-  fromName                 String?           @map("from_name")
-  toAddress                String            @map("to_address")
-  replyToAddress           String?           @map("reply_to_address")
-  subject                  String
-  textBody                 String?           @map("text_body")
-  htmlBody                 String?           @map("html_body")
-  emailCreatedAt           DateTime          @map("email_created_at") @db.Timestamptz(6)
-  idempotencyKey           String?           @unique(map: "email_messages_idempotency_key_key") @map("idempotency_key") @db.VarChar(256)
-  requestHash              String?           @map("request_hash") @db.Char(64)
-  createdAt                DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  conversation             EmailConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  parent                   EmailMessage?      @relation("EmailMessageReplies", fields: [parentMessageId], references: [id], onDelete: SetNull)
-  replies                  EmailMessage[]     @relation("EmailMessageReplies")
-  outboxEntry              EmailOutboxEntry?
+  id                          String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  conversationId              String              @map("conversation_id") @db.Uuid
+  parentMessageId             String?             @map("parent_message_id") @db.Uuid
+  direction                   EmailDirection
+  state                       EmailMessageState
+  stateDetail                 String?             @map("state_detail")
+  deliveryState               EmailDeliveryState? @map("delivery_state")
+  deliveryStateDetail         String?             @map("delivery_state_detail")
+  deliveryStateUpdatedAt      DateTime?           @map("delivery_state_updated_at") @db.Timestamptz(6)
+  deliveredAt                 DateTime?           @map("delivered_at") @db.Timestamptz(6)
+  resendEmailId               String?             @unique(map: "email_messages_resend_email_id_key") @map("resend_email_id")
+  internetMessageId           String?             @unique(map: "email_messages_internet_message_id_key") @map("internet_message_id")
+  inReplyToInternetMessageId  String?             @map("in_reply_to_internet_message_id")
+  referenceInternetMessageIds String[]            @default([]) @map("reference_internet_message_ids")
+  fromAddress                 String              @map("from_address")
+  fromName                    String?             @map("from_name")
+  toAddress                   String              @map("to_address")
+  replyToAddress              String?             @map("reply_to_address")
+  subject                     String
+  textBody                    String?             @map("text_body")
+  htmlBody                    String?             @map("html_body")
+  emailCreatedAt              DateTime            @map("email_created_at") @db.Timestamptz(6)
+  idempotencyKey              String?             @unique(map: "email_messages_idempotency_key_key") @map("idempotency_key") @db.VarChar(256)
+  requestHash                 String?             @map("request_hash") @db.Char(64)
+  createdAt                   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversation                EmailConversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  parent                      EmailMessage?       @relation("EmailMessageReplies", fields: [parentMessageId], references: [id], onDelete: SetNull)
+  replies                     EmailMessage[]      @relation("EmailMessageReplies")
+  outboxEntry                 EmailOutboxEntry?
 
   @@index([conversationId, emailCreatedAt, id], map: "idx_email_messages_conversation_created")
   @@index([inReplyToInternetMessageId], map: "idx_email_messages_in_reply_to")
@@ -101,27 +115,28 @@ model EmailOutboxEntry {
 }
 
 model EmailWebhookEvent {
-  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  svixId               String   @unique(map: "resend_wh_emails_svix_id_key") @map("svix_id")
-  eventType            String   @map("event_type")
-  webhookReceivedAt    DateTime @default(now()) @map("webhook_received_at") @db.Timestamptz(6)
-  eventCreatedAt       DateTime @map("event_created_at") @db.Timestamptz(6)
-  emailId              String   @map("email_id")
-  fromAddress          String   @map("from_address")
-  toAddresses          String[] @map("to_addresses")
+  id                   String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  svixId               String    @unique(map: "resend_wh_emails_svix_id_key") @map("svix_id")
+  eventType            String    @map("event_type")
+  webhookReceivedAt    DateTime  @default(now()) @map("webhook_received_at") @db.Timestamptz(6)
+  eventCreatedAt       DateTime  @map("event_created_at") @db.Timestamptz(6)
+  emailId              String    @map("email_id")
+  fromAddress          String    @map("from_address")
+  toAddresses          String[]  @map("to_addresses")
   subject              String
-  emailCreatedAt       DateTime @map("email_created_at") @db.Timestamptz(6)
-  broadcastId          String?  @map("broadcast_id")
-  templateId           String?  @map("template_id")
-  tags                 Json?    @db.JsonB
-  bounceType           String?  @map("bounce_type")
-  bounceSubType        String?  @map("bounce_sub_type")
-  bounceMessage        String?  @map("bounce_message")
-  bounceDiagnosticCode String[] @default([]) @map("bounce_diagnostic_code")
-  clickIpAddress       String?  @map("click_ip_address")
-  clickLink            String?  @map("click_link")
+  emailCreatedAt       DateTime  @map("email_created_at") @db.Timestamptz(6)
+  broadcastId          String?   @map("broadcast_id")
+  templateId           String?   @map("template_id")
+  tags                 Json?     @db.JsonB
+  bounceType           String?   @map("bounce_type")
+  bounceSubType        String?   @map("bounce_sub_type")
+  bounceMessage        String?   @map("bounce_message")
+  bounceDiagnosticCode String[]  @default([]) @map("bounce_diagnostic_code")
+  deliveryDetail       String?   @map("delivery_detail")
+  clickIpAddress       String?   @map("click_ip_address")
+  clickLink            String?   @map("click_link")
   clickTimestamp       DateTime? @map("click_timestamp") @db.Timestamptz(6)
-  clickUserAgent       String?  @map("click_user_agent")
+  clickUserAgent       String?   @map("click_user_agent")
 
   @@index([emailId], map: "idx_resend_wh_emails_email_id")
   @@index([eventType], map: "idx_resend_wh_emails_event_type")

@@ -9,6 +9,7 @@ This service is authoritative for:
 - Conversation identity by `(topicType, externalTopicId)`
 - Message threading by stored parent relationships and RFC `Message-ID` ancestry
 - Message send state (`received`, `pending`, `accepted`, `failed`, `indeterminate`)
+- Outbound delivery state projected from Resend lifecycle webhooks
 - Idempotent send intent persistence
 - Projection of inbound Resend email into conversations
 
@@ -17,7 +18,6 @@ This service does not own:
 - Browser-facing authentication flows
 - Recipient pricing, billing, or quota decisions
 - Contact management beyond recording provider webhook events
-- Delivery confirmation after provider acceptance
 - Attachment retrieval or storage
 
 Consumers should treat conversation IDs, message IDs, topic assignment, stored threading ancestry, and message state as authoritative here. Consumers should not infer conversation membership from subject lines alone or trust local copies of send state over this service.
@@ -56,6 +56,7 @@ Consistency:
 
 - Immediate for persisted send intent and returned state.
 - Not a delivery confirmation; `accepted` means provider accepted the send API request.
+- Delivery confirmation appears later as `deliveryState: "delivered"` after the matching Resend `email.delivered` webhook is projected.
 
 ### 2. Send a synchronous reply in an existing conversation
 
@@ -185,6 +186,7 @@ Sequence:
 
 1. `POST /api/webhooks/resend/v1` with `svix-id`, `svix-timestamp`, and `svix-signature`.
 2. For `email.received`, the service fetches message content and headers from Resend and projects inbound messages. Eligible RFC ancestry is authoritative; a conversation token in `to` or `received_for` is a participant-checked fallback.
+3. For outbound lifecycle events, the service stores the webhook ledger and projects delivery status by Resend email ID when a matching outbound message exists.
 
 Expected outcome:
 
@@ -198,7 +200,7 @@ Important failure conditions:
 
 Consistency:
 
-- Eventually consistent for inbound projection repair and outbound metadata hydration.
+- Eventually consistent for inbound projection repair, outbound metadata hydration, and outbound delivery-state projection.
 
 ## Endpoint summary
 
@@ -453,6 +455,7 @@ or, on replay of a failed or indeterminate stored request:
 - Eventual consistency:
   - Inbound `email.received` webhook projection may repair earlier inbound/outbound relationships later.
   - Outbound provider metadata hydration can update stored RFC `Message-ID` and timestamps later.
+  - Outbound delivery state updates when matching Resend lifecycle webhooks are projected by Resend email ID.
 - Asynchronous processing:
   - Outbox delivery only occurs when the drain endpoint is called.
   - Drain processes at most one bounded batch per request.
@@ -462,6 +465,14 @@ or, on replay of a failed or indeterminate stored request:
   - `accepted`: provider accepted the send API request
   - `failed`: terminal send failure
   - `indeterminate`: terminal ambiguous outcome; provider acceptance could not be confirmed safely
+- Outbound delivery states:
+  - `unknown`: no delivery lifecycle webhook has been projected yet
+  - `delivered`: Resend `email.delivered` webhook was projected; `deliveredAt` is set from that event timestamp
+  - `delivery_delayed`: Resend reported a temporary delivery delay and no terminal delivery outcome has superseded it
+  - `bounced`, `complained`, `suppressed`, `failed`: Resend reported that delivery lifecycle outcome and it must not be shown as delivered
+  - `null`: inbound message; delivery state is outbound-only
+- Engagement webhooks:
+  - `email.opened` and `email.clicked` are ingested into the webhook ledger when configured in Resend, but they are not delivery confirmations and do not change `deliveryState`.
 - Terminal vs nonterminal:
   - Nonterminal: `pending`
   - Terminal: `received`, `accepted`, `failed`, `indeterminate`
@@ -585,6 +596,9 @@ Success response:
     "direction": "outbound",
     "state": "accepted",
     "stateDetail": null,
+    "deliveryState": "unknown",
+    "deliveryStateDetail": null,
+    "deliveredAt": null,
     "resendEmailId": "sent_123",
     "internetMessageId": "<sent-1@resend.test>",
     "from": {

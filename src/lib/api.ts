@@ -118,6 +118,16 @@ export function serializeMessage(message: EmailMessage) {
     direction: message.direction.toLowerCase(),
     state: message.state.toLowerCase(),
     stateDetail: message.stateDetail,
+    deliveryState:
+      message.direction === 'OUTBOUND'
+        ? (message.deliveryState ?? 'UNKNOWN').toLowerCase()
+        : null,
+    deliveryStateDetail:
+      message.direction === 'OUTBOUND' ? message.deliveryStateDetail : null,
+    deliveredAt:
+      message.direction === 'OUTBOUND'
+        ? (message.deliveredAt?.toISOString() ?? null)
+        : null,
     resendEmailId: message.resendEmailId,
     internetMessageId: message.internetMessageId,
     from: {
