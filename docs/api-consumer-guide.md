@@ -511,7 +511,7 @@ or, on replay of a failed or indeterminate stored request:
 - Current API version: `v1`
 - Contract file: published upstream `openapi.json`
 - OpenAPI version: `3.1.1`
-- Contract/package version observed in repository: `0.0.1`
+- Contract/package version observed in repository: `0.1.0`
 - Release notes: `CHANGELOG.md`
 - Docker image tags: `castab/resend-service:<version>`
 - Backward-compatibility expectations: not formally documented beyond path versioning and SemVer release notes.

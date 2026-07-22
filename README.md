@@ -210,9 +210,9 @@ Published releases are also available on Docker Hub as
 `castab/resend-service`.
 
 ```bash
-docker pull castab/resend-service:0.0.1
-docker run --rm -e DATABASE_URL="$DATABASE_URL" castab/resend-service:0.0.1 npm run db:migrate:deploy
-docker run --rm -p 3000:3000 --env-file .env castab/resend-service:0.0.1
+docker pull castab/resend-service:0.1.0
+docker run --rm -e DATABASE_URL="$DATABASE_URL" castab/resend-service:0.1.0 npm run db:migrate:deploy
+docker run --rm -p 3000:3000 --env-file .env castab/resend-service:0.1.0
 ```
 
 Stable releases publish one immutable exact tag, plus moving convenience tags:
