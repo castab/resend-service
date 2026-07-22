@@ -1,8 +1,11 @@
 # Dependencies
+.gradle
+build
 node_modules
 
 # Build outputs
 **/dist
+.next
 out
 src/generated
 
@@ -20,9 +23,7 @@ src/generated
 .env*
 !.env.example
 
-# Tests
-**/tests
-vitest.config.ts
+# Tests and coverage
 coverage
 
 # Documentation

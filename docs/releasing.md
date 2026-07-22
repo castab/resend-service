@@ -11,13 +11,13 @@
 
 ## Files that must stay aligned
 
-- `package.json`
-- `package-lock.json`
-- `public/openapi.json`
+- `build.gradle.kts`
+- `src/main/resources/public/openapi.json`
 - `docs/api-consumer-guide.md`
 - `CHANGELOG.md`
 
-Run `npm run release:validate` before opening or merging a release PR.
+Run the Gradle and container verification steps before opening or merging a
+release PR.
 
 ## Release workflow
 
@@ -27,12 +27,9 @@ Run `npm run release:validate` before opening or merging a release PR.
 3. Run verification locally:
 
    ```bash
-   npm run release:validate
-   npm run db:validate
-   npm run api:validate
-   npm run lint
-   npm run build
-   npm run test:postgresql
+   ./gradlew test shadowJar
+   ./gradlew nativeCompile
+   docker build -t resend-service:test .
    ```
 
 4. Open a pull request into `main` with the version and changelog updates.
@@ -65,4 +62,4 @@ Run `npm run release:validate` before opening or merging a release PR.
   - `DOCKERHUB_USERNAME`
   - `DOCKERHUB_TOKEN`
 
-The release image runs the bundled Node 22 ESM Express server from `dist/server.js`; verify both the non-default `PORT` smoke test and Prisma migration command before publishing.
+The release image runs the native `resend-service` binary built from the Kotlin/http4k application; verify both the non-default `PORT` smoke test and the `migrate` command before publishing.

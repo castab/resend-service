@@ -1,25 +1,16 @@
-# syntax=docker/dockerfile:1
-FROM node:22-alpine AS base
+# syntax=docker/dockerfile:1.7
+FROM ghcr.io/graalvm/native-image-community:25 AS builder
+WORKDIR /workspace
+COPY gradle gradle
+COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY src src
+RUN --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon nativeCompile
+
+FROM oraclelinux:9-slim AS runner
+RUN microdnf install -y shadow-utils && microdnf clean all && useradd --system --uid 1001 app
 WORKDIR /app
-FROM base AS deps
-COPY package.json package-lock.json ./
-RUN npm ci
-FROM base AS prod-deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm run build
-FROM base AS runner
-ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
-RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 --ingroup app app
-COPY --from=prod-deps --chown=app:app /app/node_modules ./node_modules
-COPY --from=builder --chown=app:app /app/package.json ./package.json
-COPY --from=builder --chown=app:app /app/prisma.config.ts ./prisma.config.ts
-COPY --from=builder --chown=app:app /app/prisma ./prisma
-COPY --from=builder --chown=app:app /app/public ./public
-COPY --from=builder --chown=app:app /app/dist ./dist
+COPY --from=builder --chown=app:app /workspace/build/native/nativeCompile/resend-service /app/resend-service
 USER app
+ENV PORT=3000 HOST=0.0.0.0
 EXPOSE 3000
-CMD ["node", "dist/server.js"]
+ENTRYPOINT ["/app/resend-service", "-Xms16m", "-Xmx128m"]

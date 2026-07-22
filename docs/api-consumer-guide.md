@@ -516,7 +516,7 @@ or, on replay of a failed or indeterminate stored request:
 - Docker image tags: `castab/resend-service:<version>`
 - Backward-compatibility expectations: not formally documented beyond path versioning and SemVer release notes.
 - Deprecation process: unresolved; no `deprecated` markers or sunset policy were found.
-- Breaking changes: consumers should monitor `public/openapi.json`, changelog entries, and route version changes.
+- Breaking changes: consumers should monitor `src/main/resources/public/openapi.json`, changelog entries, and route version changes.
 - Consumer pinning guidance: pin to a specific Docker or contract version and diff future updates before upgrading.
 
 ## Environment and integration setup
@@ -756,4 +756,4 @@ curl -i \
 
 ## Service transport
 
-The service uses an Express 5 HTTP transport. This runtime detail does not change the documented URLs, authentication schemes, request bodies, or response contracts.
+The service uses an http4k HTTP transport. This runtime detail does not change the documented URLs, authentication schemes, request bodies, or response contracts.

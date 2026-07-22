@@ -25,13 +25,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-
-      - name: Validate release version metadata
-        run: node scripts/validate-release-version.mjs "$GITHUB_REF_NAME"
-
       - name: Verify tagged commit is on main
         run: |
           git fetch origin main --depth=1

@@ -94,4 +94,4 @@ environment setup, and examples.
 
 ## Transport implementation
 
-The API is served by Express 5. Route behavior lives under `src/routes`, while route ordering, request-body policy, local Swagger assets, and terminal JSON errors are configured in `src/server.ts`.
+The API is served by http4k. Route behavior, request-body policy, local Swagger assets, and terminal JSON errors are configured in `src/main/kotlin/com/castab/resend/App.kt`.

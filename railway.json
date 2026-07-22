@@ -5,19 +5,17 @@
     "dockerfilePath": "Dockerfile",
     "watchPatterns": [
       "/src/**",
-      "/prisma/**",
-      "/public/**",
-      "/package.json",
-      "/package-lock.json",
-      "/prisma.config.ts",
-      "/tsconfig.json",
-      "/tsconfig.build.json",
+      "/gradle/**",
+      "/gradlew",
+      "/build.gradle.kts",
+      "/settings.gradle.kts",
+      "/gradle.properties",
       "/.dockerignore",
       "/Dockerfile"
     ]
   },
   "deploy": {
-    "preDeployCommand": "npm run db:migrate:deploy",
+    "preDeployCommand": "/app/resend-service migrate",
     "healthcheckPath": "/api/health/v1",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",

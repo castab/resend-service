@@ -15,9 +15,13 @@
 
 # build output
 /dist/
+/.next/
 
 # production
 /build
+/.gradle
+/.idea
+*.iml
 
 # generated Prisma client
 /src/generated/prisma

@@ -2,10 +2,11 @@
 
 ## Application Boundaries
 
-- This repository contains one deployable Express application.
-- Keep API routes under `src/routes` and provider-neutral email behavior under
-  `src/lib/email`.
-- Keep Prisma access and generated-client exports under `src/lib/database`.
+- This repository contains one deployable Kotlin/http4k application.
+- Keep HTTP route registration in `src/main/kotlin/com/castab/resend/App.kt` and
+  provider-neutral email behavior under `src/main/kotlin/com/castab/resend`.
+- Keep JDBC/Flyway database access under `src/main/kotlin/com/castab/resend` and
+  checked-in migrations under `src/main/resources/db/migration`.
 - Use the API gateway to control external route exposure; do not weaken
   application-layer authentication based on network placement.
 - Keep `GET /api/health/v1` unauthenticated for readiness checks and return only
@@ -46,7 +47,7 @@
 - Preserve UUIDv7 primary keys and all webhook, message, and outbox idempotency
   constraints.
 - Never edit or commit `src/generated/prisma`.
-- Run `npm run db:validate` and `npm run db:generate` after schema changes.
+- Run the relevant Gradle tests after schema changes.
 - Treat all email-related columns as sensitive and avoid logging values.
 
 ## Email Behavior
@@ -61,7 +62,8 @@
 
 ## Contracts And Tests
 
-- Keep `public/openapi.json` aligned with every route or behavior change.
+- Keep `src/main/resources/public/openapi.json` aligned with every route or
+  behavior change.
 - Preserve explicit webhook and outbox-drain security overrides in OpenAPI.
 - Integration tests require a dedicated disposable `TEST_DATABASE_URL` and
   truncate application tables.

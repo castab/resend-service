@@ -1,0 +1,9 @@
+{
+  "resources": {
+    "includes": [
+      { "pattern": "application\\.conf" },
+      { "pattern": "public/.*" },
+      { "pattern": "db/migration/.*\\.sql" }
+    ]
+  }
+}
