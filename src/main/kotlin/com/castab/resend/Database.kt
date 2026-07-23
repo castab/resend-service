@@ -6,9 +6,10 @@ import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.Location
 import org.flywaydb.core.api.ResourceProvider
 import org.flywaydb.core.api.resource.LoadableResource
-import org.flywaydb.core.internal.resource.classpath.ClassPathResource
+import java.io.Reader
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
+import java.io.InputStreamReader
 import javax.sql.DataSource
 
 fun dataSource(url: String): HikariDataSource {
@@ -26,6 +27,7 @@ fun dataSource(url: String): HikariDataSource {
 
 private val migrationLocation = Location("classpath:db/migration")
 private const val migrationIndexPath = "db/migration/index.txt"
+private const val migrationRoot = "db/migration"
 
 fun migrate(source: DataSource) {
     val classLoader = Thread.currentThread().contextClassLoader ?: Config::class.java.classLoader
@@ -37,21 +39,21 @@ fun migrate(source: DataSource) {
         .migrate()
 }
 
-private fun loadMigrationResources(classLoader: ClassLoader): List<ClassPathResource> {
+private fun loadMigrationResources(classLoader: ClassLoader): List<MigrationResource> {
     val index = requireNotNull(classLoader.getResourceAsStream(migrationIndexPath)) {
         "Missing Flyway migration index: $migrationIndexPath"
     }
     return index.bufferedReader(UTF_8).useLines { lines ->
         lines.map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .map { path -> ClassPathResource(migrationLocation, path, classLoader, UTF_8) }
+            .map { path -> MigrationResource(classLoader, path) }
             .toList()
     }.onEach { resource ->
         require(resource.exists()) { "Missing Flyway migration resource: ${resource.absolutePath}" }
     }
 }
 
-private class IndexBackedResourceProvider(private val resources: List<ClassPathResource>) : ResourceProvider {
+private class IndexBackedResourceProvider(private val resources: List<MigrationResource>) : ResourceProvider {
     override fun getResource(name: String): LoadableResource? {
         val normalized = name.trimStart('/')
         return resources.firstOrNull {
@@ -65,5 +67,29 @@ private class IndexBackedResourceProvider(private val resources: List<ClassPathR
             resource.absolutePath.startsWith(normalizedPrefix) && suffixes.any(resource.filename::endsWith)
         }
     }
+}
+
+private class MigrationResource(
+    private val classLoader: ClassLoader,
+    private val relativePath: String,
+) : LoadableResource() {
+    private val absolutePath = "$migrationRoot/$relativePath"
+
+    override fun getAbsolutePath(): String = absolutePath
+
+    override fun getAbsolutePathOnDisk(): String = absolutePath
+
+    override fun getFilename(): String = relativePath.substringAfterLast('/')
+
+    override fun getRelativePath(): String = relativePath
+
+    override fun read(): Reader = InputStreamReader(
+        requireNotNull(classLoader.getResourceAsStream(absolutePath)) {
+            "Missing Flyway migration resource: $absolutePath"
+        },
+        UTF_8,
+    )
+
+    fun exists(): Boolean = classLoader.getResource(absolutePath) != null
 }
 
