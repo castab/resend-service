@@ -31,12 +31,17 @@ private const val migrationRoot = "db/migration"
 
 fun migrate(source: DataSource) {
     val classLoader = Thread.currentThread().contextClassLoader ?: Config::class.java.classLoader
-    Flyway.configure()
+    val config = Flyway.configure()
         .dataSource(source)
         .locations(migrationLocation)
-        .resourceProvider(IndexBackedResourceProvider(loadMigrationResources(classLoader)))
-        .load()
-        .migrate()
+
+    // GraalVM native images expose bundled resources through the non-standard
+    // `resource:` protocol, which Flyway's classpath scanner cannot enumerate.
+    if (classLoader.getResource(migrationRoot)?.protocol == "resource") {
+        config.resourceProvider(IndexBackedResourceProvider(loadMigrationResources(classLoader)))
+    }
+
+    config.load().migrate()
 }
 
 private fun loadMigrationResources(classLoader: ClassLoader): List<MigrationResource> {
