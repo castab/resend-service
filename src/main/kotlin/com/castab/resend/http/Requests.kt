@@ -5,6 +5,7 @@ import org.http4k.core.Request
 import org.http4k.core.Response
 import org.http4k.core.Status
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 private const val BODY_LIMIT_BYTES = 2_100 * 1024
 
@@ -20,27 +21,34 @@ private fun payloadTooLarge(): RawBodyErr =
     RawBodyErr(error(Status(413, "Payload Too Large"), "Request body is too large"))
 
 /**
- * Reads the request body, enforcing the shared size limit: oversize -> 413.
- * The body is read incrementally and abandoned as soon as the limit is crossed, so an
- * oversized (possibly unauthenticated) payload is never fully materialized in memory.
+ * Reads [stream] completely up to [limitBytes], in chunks; returns null as soon as the limit is
+ * crossed so an oversized payload is never fully materialized in memory.
  */
-fun readBoundedBody(request: Request): RawBodyResult {
-    val declaredLength = request.header("content-length")?.toLongOrNull()
-    if (declaredLength != null && declaredLength > BODY_LIMIT_BYTES) return payloadTooLarge()
-
-    val stream = request.body.stream
-    val initialCapacity = minOf(declaredLength ?: 8_192L, BODY_LIMIT_BYTES.toLong()).coerceAtLeast(16L).toInt()
-    val collected = ByteArrayOutputStream(initialCapacity)
+fun readBoundedStream(stream: InputStream, limitBytes: Int, sizeHint: Int = 8_192): ByteArray? {
+    val collected = ByteArrayOutputStream(minOf(sizeHint, limitBytes).coerceAtLeast(16))
     val chunk = ByteArray(64 * 1024)
     var total = 0
     while (true) {
         val read = stream.read(chunk)
         if (read < 0) break
         total += read
-        if (total > BODY_LIMIT_BYTES) return payloadTooLarge()
+        if (total > limitBytes) return null
         collected.write(chunk, 0, read)
     }
-    return RawBodyOk(collected.toByteArray())
+    return collected.toByteArray()
+}
+
+/**
+ * Reads the request body, enforcing the shared size limit: oversize -> 413. An oversized declared
+ * length is rejected before the stream is touched.
+ */
+fun readBoundedBody(request: Request): RawBodyResult {
+    val declaredLength = request.header("content-length")?.toLongOrNull()
+    if (declaredLength != null && declaredLength > BODY_LIMIT_BYTES) return payloadTooLarge()
+
+    val sizeHint = minOf(declaredLength ?: 8_192L, BODY_LIMIT_BYTES.toLong()).coerceAtLeast(16L).toInt()
+    val bytes = readBoundedStream(request.body.stream, BODY_LIMIT_BYTES, sizeHint) ?: return payloadTooLarge()
+    return RawBodyOk(bytes)
 }
 
 /**

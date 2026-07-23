@@ -18,6 +18,7 @@ import com.castab.resend.data.tx
 import com.castab.resend.domain.EmailMessage
 import com.castab.resend.domain.EmailMessageState
 import com.castab.resend.email.ResendApiError
+import com.castab.resend.email.isRetryableResendApiError
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -159,9 +160,7 @@ private fun assertLeaseOwner(h: org.jdbi.v3.core.Handle, batch: ClaimedBatch) {
 
 private fun isRetryableBatchError(error: Throwable): Boolean {
     if (error !is ResendApiError) return true
-    return (error.status == 429 && error.code != "monthly_quota_exceeded" && error.code != "daily_quota_exceeded") ||
-        error.status >= 500 ||
-        (error.status == 409 && error.code == "concurrent_idempotent_requests")
+    return isRetryableResendApiError(error)
 }
 
 private fun hasProviderWindowExpired(batch: ClaimedBatch): Boolean =

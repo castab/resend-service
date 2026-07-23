@@ -1,6 +1,7 @@
 package com.castab.resend.email
 
 import com.castab.resend.http.json
+import com.castab.resend.http.readBoundedStream
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -11,10 +12,11 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import okhttp3.OkHttpClient
 import org.http4k.client.OkHttp
+import org.http4k.core.BodyMode
 import org.http4k.core.HttpHandler
 import org.http4k.core.Method
 import org.http4k.core.Request
-import org.http4k.core.Status
+import org.http4k.core.Response
 import java.net.URLEncoder
 import java.time.Duration
 
@@ -67,17 +69,36 @@ class ResendApiError(
 /** Transport/timeout failure reaching Resend (not an HTTP error response). */
 class ResendTransportError(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
+/**
+ * Provider responses that are safe to retry with the same idempotency key: the request was not
+ * accepted (rate limit) or its outcome is unknown (server error, concurrent identical request).
+ */
+fun isRetryableResendApiError(error: ResendApiError): Boolean =
+    (error.status == 429 && error.code != "monthly_quota_exceeded" && error.code != "daily_quota_exceeded") ||
+        error.status >= 500 ||
+        (error.status == 409 && error.code == "concurrent_idempotent_requests")
+
+/** Resend returned a response larger than the applicable read bound. */
+class ResendResponseTooLargeError(message: String) : RuntimeException(message)
+
 class ResendEmailClient(
     private val apiKey: String,
     private val baseUrl: String = "https://api.resend.com",
     private val http: HttpHandler = defaultClient,
 ) {
     companion object {
+        /** Streaming body mode so oversized provider responses can be abandoned mid-read. */
         private val defaultClient: HttpHandler =
-            OkHttp(OkHttpClient.Builder().callTimeout(Duration.ofSeconds(15)).build())
+            OkHttp(OkHttpClient.Builder().callTimeout(Duration.ofSeconds(15)).build(), BodyMode.Stream)
+
+        /** Send/batch/error payloads are small JSON documents. */
+        private const val API_RESPONSE_LIMIT_BYTES = 1 * 1024 * 1024
+
+        /** Retrieved sent/received emails carry full text and HTML bodies. */
+        private const val EMAIL_RESPONSE_LIMIT_BYTES = 10 * 1024 * 1024
     }
 
-    private fun request(request: Request): String {
+    private fun request(request: Request, responseLimitBytes: Int = API_RESPONSE_LIMIT_BYTES): String {
         val withHeaders = request
             .header("authorization", "Bearer $apiKey")
             .header("content-type", "application/json")
@@ -88,7 +109,7 @@ class ResendEmailClient(
             throw ResendTransportError("Resend request failed: ${e.message}", e)
         }
         if (!response.status.successful) {
-            val body = response.bodyString()
+            val body = readBounded(response, API_RESPONSE_LIMIT_BYTES)
             throw ResendApiError(
                 "Resend API request failed with status ${response.status.code}",
                 response.status.code,
@@ -96,7 +117,13 @@ class ResendEmailClient(
                 extractCode(body),
             )
         }
-        return response.bodyString()
+        return readBounded(response, responseLimitBytes)
+    }
+
+    private fun readBounded(response: Response, limitBytes: Int): String {
+        val bytes = response.body.stream.use { readBoundedStream(it, limitBytes) }
+            ?: throw ResendResponseTooLargeError("Resend response exceeded the $limitBytes-byte limit")
+        return String(bytes, Charsets.UTF_8)
     }
 
     private fun extractCode(body: String): String? = runCatching {
@@ -129,14 +156,15 @@ class ResendEmailClient(
         }
     }
 
-    fun getSent(id: String): ResendEmail =
-        json.decodeFromString(ResendEmail.serializer(), request(Request(Method.GET, "$baseUrl/emails/${enc(id)}")))
+    fun getSent(id: String): ResendEmail = json.decodeFromString(
+        ResendEmail.serializer(),
+        request(Request(Method.GET, "$baseUrl/emails/${enc(id)}"), EMAIL_RESPONSE_LIMIT_BYTES),
+    )
 
-    fun getReceived(id: String): ResendEmail =
-        json.decodeFromString(
-            ResendEmail.serializer(),
-            request(Request(Method.GET, "$baseUrl/emails/receiving/${enc(id)}?html_format=cid")),
-        )
+    fun getReceived(id: String): ResendEmail = json.decodeFromString(
+        ResendEmail.serializer(),
+        request(Request(Method.GET, "$baseUrl/emails/receiving/${enc(id)}?html_format=cid"), EMAIL_RESPONSE_LIMIT_BYTES),
+    )
 
     private fun enc(value: String): String = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
 }

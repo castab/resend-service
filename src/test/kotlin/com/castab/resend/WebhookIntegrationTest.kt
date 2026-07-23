@@ -9,6 +9,7 @@ import com.castab.resend.support.TestFactory.conversationRequest
 import com.castab.resend.support.TestFactory.webhookRequest
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -17,6 +18,8 @@ import org.http4k.core.HttpHandler
 import org.http4k.core.Method
 import org.http4k.core.Request
 import org.http4k.core.Status
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 
 private const val CREATE_BODY =
     """{"topic":{"type":"order","externalId":"o-9","title":"Order 1"},"participant":{"email":"buyer@example.com","name":"Buyer"},"message":{"text":"Hello"}}"""
@@ -166,6 +169,31 @@ class WebhookIntegrationTest : StringSpec({
             .header("svix-signature", "v1,irrelevant")
             .body("a".repeat(2_100 * 1024 + 1))
         app(request).status.code shouldBe 413
+    }
+
+    "an oversized retrieved inbound email fails projection without acknowledgement" {
+        fake.addReceived("em_huge", "<huge@example.com>", html = "x".repeat(10 * 1024 * 1024 + 1024))
+        val response = app(webhookRequest(Svix.sign(TestFactory.WEBHOOK_SECRET, receivedPayload("em_huge"))))
+        response.status.code shouldBe 500
+
+        // Nothing was stored or acknowledged for the incomplete projection.
+        val list = app(conversationRequest(Method.GET, "/api/conversations/v1?assignment=unassigned"))
+        bodyJson(list)["conversations"]!!.jsonArray.size shouldBe 0
+    }
+
+    "webhook processing failures do not log payload contents" {
+        val marker = "MARKER-9f3a-SHOULD-NOT-BE-LOGGED"
+        // tags-as-array fails EmailEventData decoding with a serialization error quoting the payload.
+        val payload = """{"type":"email.delivered","created_at":"2026-07-01T00:00:00.000Z","data":{"email_id":"em_marker","from":"support@mail.example.test","to":["buyer@example.com"],"subject":"$marker","created_at":"2026-07-01T00:00:00.000Z","tags":["$marker"]}}"""
+        val originalErr = System.err
+        val captured = ByteArrayOutputStream()
+        try {
+            System.setErr(PrintStream(captured, true))
+            app(webhookRequest(Svix.sign(TestFactory.WEBHOOK_SECRET, payload))).status.code shouldBe 500
+        } finally {
+            System.setErr(originalErr)
+        }
+        captured.toString(Charsets.UTF_8.name()) shouldNotContain marker
     }
 
     "an oversized declared content-length is rejected without reading the body" {

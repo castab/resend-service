@@ -106,6 +106,66 @@ class ConversationIntegrationTest : StringSpec({
         bodyJson(fetched)["messages"]!!.jsonArray.size shouldBe 1
     }
 
+    "an ambiguous provider conflict keeps the message pending and a replay retries the same key" {
+        fake.failNextSendStatus = 409
+        fake.failNextSendCode = "concurrent_idempotent_requests"
+        val first = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-amb-409"))
+        first.status shouldBe Status.BAD_GATEWAY
+        bodyJson(first)["message"]!!.jsonObject["state"]!!.jsonPrimitive.content shouldBe "pending"
+        fake.sends.size shouldBe 0
+
+        // Replaying the original API idempotency key retries with the same provider key.
+        val replay = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-amb-409"))
+        replay.status shouldBe Status.OK
+        bodyJson(replay)["message"]!!.jsonObject["state"]!!.jsonPrimitive.content shouldBe "accepted"
+        fake.sends.size shouldBe 1
+        fake.sends.first().idempotencyKey shouldBe
+            "conversation/${bodyJson(replay)["message"]!!.jsonObject["id"]!!.jsonPrimitive.content}"
+    }
+
+    "rate limits and server errors do not become terminal failures" {
+        listOf(429 to "rate_limit_exceeded", 500 to "internal_server_error").forEachIndexed { index, (status, code) ->
+            fake.failNextSendStatus = status
+            fake.failNextSendCode = code
+            val body = CREATE_BODY.replace("o-1", "o-amb-$index")
+            val response = app(conversationRequest(Method.POST, "/api/conversations/v1", body, "idem-amb-$index"))
+            response.status shouldBe Status.BAD_GATEWAY
+            bodyJson(response)["message"]!!.jsonObject["state"]!!.jsonPrimitive.content shouldBe "pending"
+        }
+        fake.sends.size shouldBe 0
+    }
+
+    "a topic with an ambiguous opening send cannot be reopened with a new key" {
+        fake.failNextSendStatus = 409
+        fake.failNextSendCode = "concurrent_idempotent_requests"
+        app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-amb-reopen-1"))
+            .status shouldBe Status.BAD_GATEWAY
+
+        // The first provider request may still succeed, so a fresh provider key must be refused.
+        val reopen = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-amb-reopen-2"))
+        reopen.status shouldBe Status.CONFLICT
+        fake.sends.size shouldBe 0
+    }
+
+    "a terminal provider rejection stays failed and allows reopening the topic" {
+        fake.failNextSendStatus = 422
+        fake.failNextSendCode = "validation_error"
+        val first = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-term-1"))
+        first.status shouldBe Status.BAD_GATEWAY
+        bodyJson(first)["message"]!!.jsonObject["state"]!!.jsonPrimitive.content shouldBe "failed"
+
+        val reopened = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-term-2"))
+        reopened.status shouldBe Status.CREATED
+        fake.sends.size shouldBe 1
+    }
+
+    "an oversized provider send response leaves the message indeterminate" {
+        fake.oversizeNextSendResponse = true
+        val response = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-oversize-1"))
+        response.status shouldBe Status.BAD_GATEWAY
+        bodyJson(response)["message"]!!.jsonObject["state"]!!.jsonPrimitive.content shouldBe "indeterminate"
+    }
+
     "topic lookup and assignment conflict behave correctly" {
         app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-6"))
         val byTopic = app(conversationRequest(Method.GET, "/api/conversations/v1/topics/order/o-1"))

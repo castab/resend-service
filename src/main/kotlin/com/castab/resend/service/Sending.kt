@@ -13,7 +13,9 @@ import com.castab.resend.domain.EmailMessage
 import com.castab.resend.domain.EmailMessageState
 import com.castab.resend.email.DELIVERY_EVENT_TYPES
 import com.castab.resend.email.ResendApiError
+import com.castab.resend.email.ResendTransportError
 import com.castab.resend.email.SendEmailInput
+import com.castab.resend.email.isRetryableResendApiError
 import com.castab.resend.email.reduceDeliveryEvents
 import org.jdbi.v3.core.Handle
 import org.slf4j.LoggerFactory
@@ -85,10 +87,10 @@ fun Services.deliverPendingMessage(messageId: String): EmailMessage {
             h.findMessageById(message.id)!!
         } catch (error: Throwable) {
             sendError = error
-            val knownFailure = error is ResendApiError ||
-                (error.message?.startsWith("Missing RESEND_API_KEY") == true)
-            val state = if (knownFailure) EmailMessageState.FAILED else EmailMessageState.INDETERMINATE
-            h.updateMessageStateDetail(message.id, state, error.message?.take(1000) ?: "Unknown error")
+            val state = classifySendFailure(error)
+            if (state != null) {
+                h.updateMessageStateDetail(message.id, state, error.message?.take(1000) ?: "Unknown error")
+            }
             h.findMessageById(message.id)!!
         }
     }
@@ -160,6 +162,23 @@ fun Services.ensureInternetMessageId(messageId: String): String? {
         jdbi.withHandle<Unit, RuntimeException> { it.setMessageInternetMessageId(message.id, retrieved.messageId) }
     }
     return retrieved.messageId
+}
+
+/**
+ * Terminal state for a failed synchronous send, or null when the message must remain `PENDING` so
+ * a replay with the same idempotency key can retry safely inside the provider window. Mirrors the
+ * outbox classification: ambiguous or retryable provider outcomes must never become `FAILED`,
+ * because a failed-topic conversation can be reopened with a fresh provider key and deliver a
+ * duplicate if the original request ultimately succeeded.
+ */
+private fun classifySendFailure(error: Throwable): EmailMessageState? = when {
+    error is ResendApiError && error.status == 409 && error.code == "invalid_idempotent_request" ->
+        EmailMessageState.INDETERMINATE
+    error is ResendApiError && isRetryableResendApiError(error) -> null
+    error is ResendApiError -> EmailMessageState.FAILED
+    error is ResendTransportError -> null
+    error.message?.startsWith("Missing RESEND_API_KEY") == true -> EmailMessageState.FAILED
+    else -> EmailMessageState.INDETERMINATE
 }
 
 /**

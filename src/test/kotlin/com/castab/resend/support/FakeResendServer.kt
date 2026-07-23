@@ -39,12 +39,16 @@ class FakeResendServer {
     val received = mutableMapOf<String, JsonObject>()
 
     var failNextSendStatus: Int? = null
+    var failNextSendCode: String? = null
     var failNextBatchStatus: Int? = null
     var failNextBatchCode: String = "application_error"
     var malformedNextBatchResponse: Boolean = false
 
     /** While true, every `GET /emails/{id}` retrieval fails with a 500 (simulates provider outage). */
     var failSentRetrievals: Boolean = false
+
+    /** When true, the next successful send response is padded past the client's API response bound. */
+    var oversizeNextSendResponse: Boolean = false
 
     private lateinit var server: Http4kServer
     val baseUrl: String get() = "http://localhost:${server.port()}"
@@ -65,10 +69,12 @@ class FakeResendServer {
         idempotentResponses.clear()
         idempotentBatchResponses.clear()
         failNextSendStatus = null
+        failNextSendCode = null
         failNextBatchStatus = null
         failNextBatchCode = "application_error"
         malformedNextBatchResponse = false
         failSentRetrievals = false
+        oversizeNextSendResponse = false
         received.clear()
         received["em_received123"] = buildJsonObject {
             put("id", JsonPrimitive("em_received123"))
@@ -85,7 +91,13 @@ class FakeResendServer {
     }
 
     /** Registers a retrievable received-email fixture (call after `reset`). */
-    fun addReceived(id: String, messageId: String, from: String = "external@example.com", references: String? = null) {
+    fun addReceived(
+        id: String,
+        messageId: String,
+        from: String = "external@example.com",
+        references: String? = null,
+        html: String = "<p>Inbound test body</p>",
+    ) {
         received[id] = buildJsonObject {
             put("id", JsonPrimitive(id))
             put("message_id", JsonPrimitive(messageId))
@@ -94,7 +106,7 @@ class FakeResendServer {
             put("subject", JsonPrimitive("Received Email"))
             put("created_at", JsonPrimitive("2026-07-19T03:52:03.099Z"))
             put("text", JsonPrimitive("Inbound test body"))
-            put("html", JsonPrimitive("<p>Inbound test body</p>"))
+            put("html", JsonPrimitive(html))
             put("headers", buildJsonObject {
                 put("from", JsonPrimitive(from))
                 if (references != null) put("references", JsonPrimitive(references))
@@ -143,8 +155,13 @@ class FakeResendServer {
             val body = request.bodyString()
             val input = jsonCodec.parseToJsonElement(body) as JsonObject
             failNextSendStatus?.let { status ->
+                val code = failNextSendCode
                 failNextSendStatus = null
-                return@to json(status, buildJsonObject { put("error", JsonPrimitive("simulated_send_failure")) })
+                failNextSendCode = null
+                return@to json(status, buildJsonObject {
+                    if (code != null) put("name", JsonPrimitive(code))
+                    put("message", JsonPrimitive("simulated_send_failure"))
+                })
             }
             val idempotencyKey = request.header("idempotency-key")
             val existingId = idempotencyKey?.let { idempotentResponses[it] }
@@ -152,6 +169,13 @@ class FakeResendServer {
             if (existingId == null) {
                 sends.add(Send(id, idempotencyKey, input))
                 if (idempotencyKey != null) idempotentResponses[idempotencyKey] = id
+            }
+            if (oversizeNextSendResponse) {
+                oversizeNextSendResponse = false
+                return@to json(200, buildJsonObject {
+                    put("id", JsonPrimitive(id))
+                    put("padding", JsonPrimitive("x".repeat(1024 * 1024 + 1024)))
+                })
             }
             json(200, buildJsonObject { put("id", JsonPrimitive(id)) })
         },

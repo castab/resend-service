@@ -77,7 +77,9 @@ fun Services.handleWebhook(request: Request): Response {
         }
         jsonResponse(Status.OK, buildJsonObject { put("received", JsonPrimitive(true)) })
     } catch (ex: Throwable) {
-        log.error("Database insertion failed: {}", ex.message ?: "Unknown error")
+        // Exception messages can carry payload excerpts (addresses, subjects, bodies), which the
+        // repository logging rules forbid; log only the stable exception class.
+        log.error("Failed to process webhook event: {}", ex::class.simpleName ?: "UnknownError")
         error(Status.INTERNAL_SERVER_ERROR, "Failed to process webhook")
     }
 }
@@ -120,7 +122,10 @@ private fun Services.insertEmailEvent(envelope: WebhookEnvelope, svixId: String)
                 existingReceived.inReplyToInternetMessageId ?: existingReceived.referenceInternetMessageIds.lastOrNull(),
             )
         } catch (ex: Throwable) {
-            log.warn("Outbound hydration for an already-projected inbound email failed: {}", ex.message ?: "Unknown error")
+            log.warn(
+                "Outbound hydration for an already-projected inbound email failed: {}",
+                ex::class.simpleName ?: "UnknownError",
+            )
         }
         return
     }
