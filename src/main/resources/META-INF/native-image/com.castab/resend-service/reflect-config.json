@@ -8,5 +8,89 @@
   {
     "name": "org.jdbi.v3.core.config.internal.ConfigCaches",
     "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.Handles",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.argument.Arguments",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.array.SqlArrayTypes",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.collector.JdbiCollectors",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.enums.Enums",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.extension.Extensions",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.internal.EnumStrategies",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.internal.OnDemandExtensions",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.ColumnMappers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.MapEntryMappers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.MapMappers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.Mappers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.RowMappers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.freebuilder.JdbiFreeBuilders",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.immutables.JdbiImmutables",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.reflect.ReflectionMappers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.mapper.reflect.internal.PojoTypes",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.qualifier.Qualifiers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.result.ResultProducers",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.statement.SqlStatements",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jdbi.v3.core.statement.StatementExceptions",
+    "allDeclaredConstructors": true
   }
 ]
