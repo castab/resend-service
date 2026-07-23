@@ -1,0 +1,7 @@
+# Keep this list aligned with checked-in Flyway SQL migrations for GraalVM native-image builds.
+V001__initial.sql
+V002__add_email_conversations.sql
+V003__add_email_outbox.sql
+V004__add_conversation_routing_token.sql
+V005__add_message_delivery_state.sql
+V006__add_message_reply_to_name.sql
