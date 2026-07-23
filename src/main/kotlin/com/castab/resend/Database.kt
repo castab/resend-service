@@ -4,12 +4,11 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.Location
-import org.flywaydb.core.api.ResourceProvider
-import org.flywaydb.core.api.resource.LoadableResource
-import java.io.Reader
+import java.io.InputStream
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
-import java.io.InputStreamReader
+import java.nio.file.Files
+import java.nio.file.Path
 import javax.sql.DataSource
 
 fun dataSource(url: String): HikariDataSource {
@@ -31,70 +30,47 @@ private const val migrationRoot = "db/migration"
 
 fun migrate(source: DataSource) {
     val classLoader = Thread.currentThread().contextClassLoader ?: Config::class.java.classLoader
-    val config = Flyway.configure()
-        .dataSource(source)
-        .locations(migrationLocation)
-
-    // GraalVM native images expose bundled resources through the non-standard
-    // `resource:` protocol, which Flyway's classpath scanner cannot enumerate.
-    if (classLoader.getResource(migrationRoot)?.protocol == "resource") {
-        config.resourceProvider(IndexBackedResourceProvider(loadMigrationResources(classLoader)))
+    val locations = if (classLoader.getResource(migrationRoot)?.protocol == "resource") {
+        arrayOf(nativeMigrationLocation(classLoader))
+    } else {
+        arrayOf(migrationLocation)
     }
 
-    config.load().migrate()
+    Flyway.configure()
+        .dataSource(source)
+        .locations(*locations)
+        .load()
+        .migrate()
 }
 
-private fun loadMigrationResources(classLoader: ClassLoader): List<MigrationResource> {
+private fun nativeMigrationLocation(classLoader: ClassLoader): Location {
+    val directory = Files.createTempDirectory("flyway-migrations-")
+    loadMigrationPaths(classLoader).forEach { relativePath ->
+        copyMigrationResource(classLoader, relativePath, directory.resolve(relativePath))
+    }
+    directory.toFile().deleteOnExit()
+    return Location("${Location.FILESYSTEM_PREFIX}${directory.toAbsolutePath().toString().replace('\\', '/')}")
+}
+
+private fun loadMigrationPaths(classLoader: ClassLoader): List<String> {
     val index = requireNotNull(classLoader.getResourceAsStream(migrationIndexPath)) {
         "Missing Flyway migration index: $migrationIndexPath"
     }
     return index.bufferedReader(UTF_8).useLines { lines ->
         lines.map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .map { path -> MigrationResource(classLoader, path) }
             .toList()
-    }.onEach { resource ->
-        require(resource.exists()) { "Missing Flyway migration resource: ${resource.absolutePath}" }
     }
 }
 
-private class IndexBackedResourceProvider(private val resources: List<MigrationResource>) : ResourceProvider {
-    override fun getResource(name: String): LoadableResource? {
-        val normalized = name.trimStart('/')
-        return resources.firstOrNull {
-            it.absolutePath == normalized || it.relativePath == normalized || it.filename == normalized
-        }
+private fun copyMigrationResource(classLoader: ClassLoader, relativePath: String, destination: Path) {
+    val absolutePath = "$migrationRoot/$relativePath"
+    val input = requireNotNull(classLoader.getResourceAsStream(absolutePath)) {
+        "Missing Flyway migration resource: $absolutePath"
     }
-
-    override fun getResources(prefix: String, suffixes: Array<String>): Collection<LoadableResource> {
-        val normalizedPrefix = prefix.trimStart('/')
-        return resources.filter { resource ->
-            resource.absolutePath.startsWith(normalizedPrefix) && suffixes.any(resource.filename::endsWith)
-        }
+    input.use {
+        Files.createDirectories(destination.parent)
+        Files.newOutputStream(destination).use(it::transferTo)
     }
-}
-
-private class MigrationResource(
-    private val classLoader: ClassLoader,
-    private val relativePath: String,
-) : LoadableResource() {
-    private val absolutePath = "$migrationRoot/$relativePath"
-
-    override fun getAbsolutePath(): String = absolutePath
-
-    override fun getAbsolutePathOnDisk(): String = absolutePath
-
-    override fun getFilename(): String = relativePath.substringAfterLast('/')
-
-    override fun getRelativePath(): String = relativePath
-
-    override fun read(): Reader = InputStreamReader(
-        requireNotNull(classLoader.getResourceAsStream(absolutePath)) {
-            "Missing Flyway migration resource: $absolutePath"
-        },
-        UTF_8,
-    )
-
-    fun exists(): Boolean = classLoader.getResource(absolutePath) != null
 }
 
