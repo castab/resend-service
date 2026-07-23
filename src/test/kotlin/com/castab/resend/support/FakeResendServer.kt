@@ -15,7 +15,15 @@ import org.http4k.routing.routes
 import org.http4k.server.Http4kServer
 import org.http4k.server.Jetty
 import org.http4k.server.asServer
-import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+/** Mirrors Resend's documented retrieve format, e.g. `2026-04-03 22:13:42.674981+00`. */
+private val PROVIDER_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS'+00'")
+
+private fun providerTimestamp(): String =
+    OffsetDateTime.now(ZoneOffset.UTC).format(PROVIDER_TIMESTAMP)
 
 /** In-process stand-in for the Resend API, mirroring the Express `FakeResendServer`. */
 class FakeResendServer {
@@ -34,6 +42,9 @@ class FakeResendServer {
     var failNextBatchStatus: Int? = null
     var failNextBatchCode: String = "application_error"
     var malformedNextBatchResponse: Boolean = false
+
+    /** While true, every `GET /emails/{id}` retrieval fails with a 500 (simulates provider outage). */
+    var failSentRetrievals: Boolean = false
 
     private lateinit var server: Http4kServer
     val baseUrl: String get() = "http://localhost:${server.port()}"
@@ -57,6 +68,7 @@ class FakeResendServer {
         failNextBatchStatus = null
         failNextBatchCode = "application_error"
         malformedNextBatchResponse = false
+        failSentRetrievals = false
         received.clear()
         received["em_received123"] = buildJsonObject {
             put("id", JsonPrimitive("em_received123"))
@@ -68,6 +80,25 @@ class FakeResendServer {
             put("text", JsonPrimitive("Inbound test body"))
             put("html", JsonPrimitive("<p>Inbound test body</p>"))
             put("headers", buildJsonObject { put("from", JsonPrimitive("External Person <external@example.com>")) })
+            put("reply_to", JsonArray(emptyList()))
+        }
+    }
+
+    /** Registers a retrievable received-email fixture (call after `reset`). */
+    fun addReceived(id: String, messageId: String, from: String = "external@example.com", references: String? = null) {
+        received[id] = buildJsonObject {
+            put("id", JsonPrimitive(id))
+            put("message_id", JsonPrimitive(messageId))
+            put("from", JsonPrimitive(from))
+            put("to", JsonArray(listOf(JsonPrimitive("inbox@example.com"))))
+            put("subject", JsonPrimitive("Received Email"))
+            put("created_at", JsonPrimitive("2026-07-19T03:52:03.099Z"))
+            put("text", JsonPrimitive("Inbound test body"))
+            put("html", JsonPrimitive("<p>Inbound test body</p>"))
+            put("headers", buildJsonObject {
+                put("from", JsonPrimitive(from))
+                if (references != null) put("references", JsonPrimitive(references))
+            })
             put("reply_to", JsonArray(emptyList()))
         }
     }
@@ -129,6 +160,9 @@ class FakeResendServer {
             received[id]?.let { json(200, it) } ?: json(404, buildJsonObject { put("error", JsonPrimitive("not_found")) })
         },
         "/emails/{id}" bind Method.GET to { request ->
+            if (failSentRetrievals) {
+                return@to json(500, buildJsonObject { put("error", JsonPrimitive("simulated_retrieval_failure")) })
+            }
             val id = request.path("id").orEmpty()
             val sent = sends.firstOrNull { it.id == id }
             if (sent == null) {
@@ -140,7 +174,8 @@ class FakeResendServer {
                     put("from", sent.input["from"] ?: JsonPrimitive(""))
                     put("to", sent.input["to"] ?: JsonArray(emptyList()))
                     put("subject", sent.input["subject"] ?: JsonPrimitive(""))
-                    put("created_at", JsonPrimitive(Instant.now().toString()))
+                    // Resend's retrieve response uses a Postgres-style timestamp, not an ISO instant.
+                    put("created_at", JsonPrimitive(providerTimestamp()))
                     put("text", sent.input["text"] ?: kotlinx.serialization.json.JsonNull)
                     put("html", sent.input["html"] ?: kotlinx.serialization.json.JsonNull)
                 })

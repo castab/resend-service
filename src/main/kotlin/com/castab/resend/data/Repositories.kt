@@ -254,11 +254,6 @@ fun Handle.findMessageByInternetMessageId(internetMessageId: String): EmailMessa
     createQuery("SELECT * FROM email_messages WHERE internet_message_id = :id")
         .bind("id", internetMessageId).map(MessageMapper).findOne().orElse(null)
 
-/** Existing inbound projection for the same Resend email id or RFC Message-ID (idempotency). */
-fun Handle.findExistingInboundMessage(resendEmailId: String, internetMessageId: String): EmailMessage? =
-    createQuery("SELECT * FROM email_messages WHERE resend_email_id = :r OR internet_message_id = :i LIMIT 1")
-        .bind("r", resendEmailId).bind("i", internetMessageId).map(MessageMapper).findOne().orElse(null)
-
 fun Handle.findConversationsByIds(ids: List<String>): List<EmailConversation> {
     if (ids.isEmpty()) return emptyList()
     return createQuery("SELECT * FROM email_conversations WHERE id = ANY(:ids)")

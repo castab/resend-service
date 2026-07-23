@@ -5,6 +5,10 @@ private val subjectPrefix = Regex("^\\s*(?:re|fw|fwd)\\s*:\\s*", RegexOption.IGN
 
 fun extractMessageIds(value: String?): List<String> = value?.let { messageId.findAll(it).map(MatchResult::value).toList() }.orEmpty()
 
+/** A usable RFC Message-ID: a single angle-bracketed token within the RFC 5322 line limit. */
+fun isValidInternetMessageId(value: String): Boolean =
+    value.length <= 998 && messageId.matches(value)
+
 fun normalizeSubject(value: String): String {
     var normalized = value.trim()
     while (subjectPrefix.containsMatchIn(normalized)) normalized = subjectPrefix.replaceFirst(normalized, "")

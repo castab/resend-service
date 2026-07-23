@@ -7,7 +7,6 @@ import com.castab.resend.data.deleteConversations
 import com.castab.resend.data.findConversationById
 import com.castab.resend.data.findConversationsByIds
 import com.castab.resend.data.findConversationsByRoutingTokens
-import com.castab.resend.data.findExistingInboundMessage
 import com.castab.resend.data.findFirstOutboundHydrationMessage
 import com.castab.resend.data.findMessageById
 import com.castab.resend.data.findMessageByInternetMessageId
@@ -37,6 +36,7 @@ import com.castab.resend.email.ResendEmailClient
 import com.castab.resend.email.extractMessageIds
 import com.castab.resend.email.extractRoutingTokens
 import com.castab.resend.email.getHeader
+import com.castab.resend.email.isValidInternetMessageId
 import com.castab.resend.email.normalizeSubject
 import com.castab.resend.email.parseAddress
 import org.jdbi.v3.core.transaction.TransactionIsolationLevel
@@ -124,7 +124,10 @@ fun Services.projectInboundEmail(
     email: ResendEmail,
     replyToBaseAddress: String,
 ): EmailMessage {
-    val internetMessageId = eventData.messageId ?: email.messageId
+    // An empty or malformed provider Message-ID is unusable for idempotency or threading;
+    // treat it as absent so distinct emails are never conflated by a bad value.
+    val candidateInternetMessageId = (eventData.messageId ?: email.messageId)
+        .takeIf { isValidInternetMessageId(it) }
     val inReplyTo = extractMessageIds(getHeader(email.headers, "in-reply-to")).lastOrNull()
     val rawReferences = extractMessageIds(getHeader(email.headers, "references"))
         .filter { it.length <= 998 }
@@ -144,15 +147,23 @@ fun Services.projectInboundEmail(
     for (attempt in 0 until 3) {
         try {
             return jdbi.tx(TransactionIsolationLevel.SERIALIZABLE) { h ->
-                val lockIds = (listOf(internetMessageId) + references).filter { it.isNotEmpty() }.distinct().sorted()
+                val lockIds = (listOfNotNull(candidateInternetMessageId) + references)
+                    .filter { it.isNotEmpty() }.distinct().sorted()
                 lockIds.forEach { h.advisoryXactLock(it) }
 
-                val existing = h.findExistingInboundMessage(eventData.emailId, internetMessageId)
+                // Idempotency is keyed on the Resend email id alone: a matching RFC Message-ID on a
+                // different email id is a reuse (or forgery), not a redelivery.
+                val existing = h.findMessageByResendEmailId(eventData.emailId)
                 if (existing != null) return@tx existing
+
+                // A distinct email reusing an already-stored Message-ID is projected as its own
+                // message without one (the unique index permits multiple NULLs).
+                val internetMessageId = candidateInternetMessageId
+                    ?.takeIf { h.findMessageByInternetMessageId(it) == null }
 
                 val ancestry = references.reversed()
                 val related = if (ancestry.isNotEmpty()) h.findMessagesByInternetMessageIds(ancestry) else emptyList()
-                val waitingRaw = h.findWaitingChildren(internetMessageId)
+                val waitingRaw = internetMessageId?.let { h.findWaitingChildren(it) } ?: emptyList()
                 val convIds = (related.map { it.conversationId } + waitingRaw.map { it.conversationId }).distinct()
                 val convById = h.findConversationsByIds(convIds).associateBy { it.id }
 
@@ -234,16 +245,14 @@ fun Services.projectInboundEmail(
                     ),
                 )
 
-                h.reparentWaitingChildren(internetMessageId, chosen.id, message.id)
+                internetMessageId?.let { h.reparentWaitingChildren(it, chosen.id, message.id) }
                 h.maxEmailCreatedAt(chosen.id)?.let { h.setConversationLastMessageAt(chosen.id, it) }
                 message
             }
         } catch (error: RuntimeException) {
             if (isSerializationFailure(error) && attempt < 2) continue
             if (isUniqueViolation(error)) {
-                val existing = jdbi.h {
-                    it.findMessageByResendEmailId(eventData.emailId) ?: it.findMessageByInternetMessageId(internetMessageId)
-                }
+                val existing = jdbi.h { it.findMessageByResendEmailId(eventData.emailId) }
                 if (existing != null) return existing
             }
             throw error

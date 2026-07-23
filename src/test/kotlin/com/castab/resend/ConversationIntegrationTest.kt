@@ -83,6 +83,29 @@ class ConversationIntegrationTest : StringSpec({
         bodyJson(reply)["message"]!!.jsonObject["subject"]!!.jsonPrimitive.content shouldBe "Re: Order 1"
     }
 
+    "an explicit reply parent from another conversation is rejected" {
+        val createdA = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-parent-a"))
+        val otherBody = CREATE_BODY.replace("o-1", "o-parent-b")
+        val createdB = app(conversationRequest(Method.POST, "/api/conversations/v1", otherBody, "idem-parent-b"))
+        val parentFromA = bodyJson(createdA)["message"]!!.jsonObject["id"]!!.jsonPrimitive.content
+        val conversationB = bodyJson(createdB)["conversationId"]!!.jsonPrimitive.content
+
+        val reply = app(
+            conversationRequest(
+                Method.POST,
+                "/api/conversations/v1/$conversationB/messages",
+                """{"text":"Cross-conversation reply","replyToMessageId":"$parentFromA"}""",
+                "idem-parent-reply",
+            ),
+        )
+        reply.status shouldBe Status.NOT_FOUND
+
+        // Nothing was sent or persisted for the rejected reply.
+        fake.sends.size shouldBe 2
+        val fetched = app(conversationRequest(Method.GET, "/api/conversations/v1/$conversationB"))
+        bodyJson(fetched)["messages"]!!.jsonArray.size shouldBe 1
+    }
+
     "topic lookup and assignment conflict behave correctly" {
         app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-6"))
         val byTopic = app(conversationRequest(Method.GET, "/api/conversations/v1/topics/order/o-1"))

@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeParseException
 
 private val log = LoggerFactory.getLogger("com.castab.resend.service.Sending")
 
@@ -161,5 +162,17 @@ fun Services.ensureInternetMessageId(messageId: String): String? {
     return retrieved.messageId
 }
 
-internal fun parseInstant(value: String): OffsetDateTime =
-    Instant.parse(value).atOffset(ZoneOffset.UTC)
+/**
+ * Parses provider timestamps in either strict ISO instant form (`2026-07-19T03:52:03.099Z`) or
+ * Resend's Postgres-style retrieve format (`2026-04-03 22:13:42.674981+00`).
+ */
+internal fun parseInstant(value: String): OffsetDateTime {
+    try {
+        return Instant.parse(value).atOffset(ZoneOffset.UTC)
+    } catch (_: DateTimeParseException) {
+        // Fall through to the normalized offset form.
+    }
+    var normalized = value.trim().replaceFirst(' ', 'T')
+    if (Regex("[+-]\\d{2}$").containsMatchIn(normalized)) normalized += ":00"
+    return OffsetDateTime.parse(normalized).withOffsetSameInstant(ZoneOffset.UTC)
+}

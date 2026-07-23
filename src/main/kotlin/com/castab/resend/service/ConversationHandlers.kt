@@ -342,12 +342,18 @@ private fun Services.reply(
     val conversation = jdbi.h { it.findConversationById(conversationId) }
         ?: return error(Status.NOT_FOUND, "Conversation not found")
 
+    // An explicit reply parent must belong to the requested conversation; only an omitted
+    // parent falls back to the latest eligible message.
     val parent = jdbi.h { h ->
-        input.replyToMessageId?.let { h.findMessageInConversation(it, conversationId) }
-            ?: h.findLatestParentCandidate(
+        val explicitId = input.replyToMessageId
+        if (explicitId != null) {
+            h.findMessageInConversation(explicitId, conversationId)
+        } else {
+            h.findLatestParentCandidate(
                 conversationId,
                 listOf(EmailMessageState.RECEIVED, EmailMessageState.ACCEPTED),
             )
+        }
     } ?: return error(Status.NOT_FOUND, "Reply parent not found")
 
     val parentInternetMessageId = try {

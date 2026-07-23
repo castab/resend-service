@@ -24,9 +24,14 @@ import com.castab.resend.email.isDomainEvent
 import com.castab.resend.email.isEmailEvent
 import com.castab.resend.email.isValidReplyToBaseAddress
 import com.castab.resend.email.parseAddress
+import com.castab.resend.http.RawBodyErr
+import com.castab.resend.http.RawBodyOk
 import com.castab.resend.http.error
 import com.castab.resend.http.json
 import com.castab.resend.http.jsonResponse
+import com.castab.resend.http.readBoundedBody
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -51,7 +56,11 @@ fun Services.handleWebhook(request: Request): Response {
         return error(Status.BAD_REQUEST, "Missing required Svix headers")
     }
 
-    val rawBody = request.bodyString()
+    // Bound the unauthenticated payload before verification or JSON decoding.
+    val rawBody = when (val raw = readBoundedBody(request)) {
+        is RawBodyErr -> return raw.response
+        is RawBodyOk -> String(raw.bytes, Charsets.UTF_8)
+    }
     val verification = WebhookVerifier.verify(rawBody, svixId, svixTimestamp, svixSignature, secret)
     if (verification is VerifyErr) {
         log.error("Webhook verification failed: {}", verification.error)
@@ -99,14 +108,20 @@ private fun Services.insertEmailEvent(envelope: WebhookEnvelope, svixId: String)
     val existingReceived = jdbi.h { it.findMessageByResendEmailId(data.emailId) }
     val resend = configuredResend()
     if (existingReceived != null) {
+        // The projection already exists, so a replayed delivery must acknowledge idempotently:
+        // a transient hydration failure is logged rather than surfaced as a 500.
         val ancestry = existingReceived.referenceInternetMessageIds +
             (existingReceived.inReplyToInternetMessageId?.let { listOf(it) } ?: emptyList())
-        hydrateReferencedOutboundMessages(
-            resend,
-            existingReceived.fromAddress,
-            ancestry,
-            existingReceived.inReplyToInternetMessageId ?: existingReceived.referenceInternetMessageIds.lastOrNull(),
-        )
+        try {
+            hydrateReferencedOutboundMessages(
+                resend,
+                existingReceived.fromAddress,
+                ancestry,
+                existingReceived.inReplyToInternetMessageId ?: existingReceived.referenceInternetMessageIds.lastOrNull(),
+            )
+        } catch (ex: Throwable) {
+            log.warn("Outbound hydration for an already-projected inbound email failed: {}", ex.message ?: "Unknown error")
+        }
         return
     }
 
@@ -133,7 +148,9 @@ private fun emailEventRow(envelope: WebhookEnvelope, data: EmailEventData, svixI
     emailCreatedAt = data.createdAt,
     broadcastId = data.broadcastId,
     templateId = data.templateId,
-    tagsJson = data.tags?.let { compactJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.castab.resend.email.WebhookTag.serializer()), it) },
+    tagsJson = data.tags?.let {
+        compactJson.encodeToString(MapSerializer(String.serializer(), String.serializer()), it)
+    },
     bounceType = data.bounce?.type,
     bounceSubType = data.bounce?.subType,
     bounceMessage = data.bounce?.message,

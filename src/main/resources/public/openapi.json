@@ -1786,9 +1786,9 @@
             "type": "string"
           },
           "tags": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WebhookTag"
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
             }
           },
           "bounce": {
@@ -1802,18 +1802,6 @@
           },
           "suppressed": {
             "$ref": "#/components/schemas/SuppressedData"
-          }
-        }
-      },
-      "WebhookTag": {
-        "type": "object",
-        "required": ["name", "value"],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
           }
         }
       },

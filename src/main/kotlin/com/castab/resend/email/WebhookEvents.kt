@@ -5,9 +5,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
-data class WebhookTag(val name: String, val value: String)
-
-@Serializable
 data class BounceData(
     val diagnosticCode: List<String> = emptyList(),
     val message: String? = null,
@@ -38,7 +35,7 @@ data class EmailEventData(
     @SerialName("created_at") val createdAt: String,
     @SerialName("broadcast_id") val broadcastId: String? = null,
     @SerialName("template_id") val templateId: String? = null,
-    val tags: List<WebhookTag>? = null,
+    val tags: Map<String, String>? = null,
     val bounce: BounceData? = null,
     val click: ClickData? = null,
     val failed: FailedData? = null,
