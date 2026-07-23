@@ -167,5 +167,15 @@ class WebhookIntegrationTest : StringSpec({
             .body("a".repeat(2_100 * 1024 + 1))
         app(request).status.code shouldBe 413
     }
+
+    "an oversized declared content-length is rejected without reading the body" {
+        val request = Request(Method.POST, "/api/webhooks/resend/v1")
+            .header("svix-id", "msg_big_declared")
+            .header("svix-timestamp", (System.currentTimeMillis() / 1000).toString())
+            .header("svix-signature", "v1,irrelevant")
+            .header("content-length", (100L * 1024 * 1024).toString())
+            .body("""{"type":"email.sent"}""")
+        app(request).status.code shouldBe 413
+    }
     }
 })

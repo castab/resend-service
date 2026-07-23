@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonElement
 import org.http4k.core.Request
 import org.http4k.core.Response
 import org.http4k.core.Status
+import java.io.ByteArrayOutputStream
 
 private const val BODY_LIMIT_BYTES = 2_100 * 1024
 
@@ -15,15 +16,31 @@ sealed interface RawBodyResult
 data class RawBodyOk(val bytes: ByteArray) : RawBodyResult
 data class RawBodyErr(val response: Response) : RawBodyResult
 
-/** Reads the request body, enforcing the shared size limit: oversize -> 413. */
+private fun payloadTooLarge(): RawBodyErr =
+    RawBodyErr(error(Status(413, "Payload Too Large"), "Request body is too large"))
+
+/**
+ * Reads the request body, enforcing the shared size limit: oversize -> 413.
+ * The body is read incrementally and abandoned as soon as the limit is crossed, so an
+ * oversized (possibly unauthenticated) payload is never fully materialized in memory.
+ */
 fun readBoundedBody(request: Request): RawBodyResult {
-    val bytes = request.body.payload.let { buf ->
-        ByteArray(buf.remaining()).also { buf.duplicate().get(it) }
+    val declaredLength = request.header("content-length")?.toLongOrNull()
+    if (declaredLength != null && declaredLength > BODY_LIMIT_BYTES) return payloadTooLarge()
+
+    val stream = request.body.stream
+    val initialCapacity = minOf(declaredLength ?: 8_192L, BODY_LIMIT_BYTES.toLong()).coerceAtLeast(16L).toInt()
+    val collected = ByteArrayOutputStream(initialCapacity)
+    val chunk = ByteArray(64 * 1024)
+    var total = 0
+    while (true) {
+        val read = stream.read(chunk)
+        if (read < 0) break
+        total += read
+        if (total > BODY_LIMIT_BYTES) return payloadTooLarge()
+        collected.write(chunk, 0, read)
     }
-    if (bytes.size > BODY_LIMIT_BYTES) {
-        return RawBodyErr(error(Status(413, "Payload Too Large"), "Request body is too large"))
-    }
-    return RawBodyOk(bytes)
+    return RawBodyOk(collected.toByteArray())
 }
 
 /**
