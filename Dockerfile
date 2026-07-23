@@ -11,6 +11,6 @@ RUN microdnf install -y shadow-utils && microdnf clean all && useradd --system -
 WORKDIR /app
 COPY --from=builder --chown=app:app /workspace/build/native/nativeCompile/resend-service /app/resend-service
 USER app
-ENV PORT=3000 HOST=0.0.0.0
-EXPOSE 3000
+ENV PORT=8080 HOST=0.0.0.0
+EXPOSE 8080
 ENTRYPOINT ["/app/resend-service"]

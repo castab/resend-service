@@ -16,7 +16,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "8080:8080"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgresql:5432/resend_test
       RESEND_API_KEY: ${RESEND_API_KEY:-}

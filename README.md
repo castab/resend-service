@@ -92,7 +92,7 @@ environment variables:
 
 | Variable | Purpose | Current use |
 | --- | --- | --- |
-| `PORT` | HTTP listen port; defaults to `3000` | Applied to Jetty |
+| `PORT` | HTTP listen port; defaults to `8080` | Applied to Jetty |
 | `HOST` | Intended listen host; defaults to `0.0.0.0` | Loaded and logged, but not yet applied to Jetty |
 | `DATABASE_URL` | PostgreSQL URI such as `postgresql://user:pass@host:5432/db` | Pool creation, migrations, and health |
 | `RESEND_API_KEY` | Resend credential | Authenticates send/retrieve calls; required for healthy status |
@@ -134,7 +134,7 @@ Run migrations and then start the container with a runtime environment file:
 
 ```bash
 docker run --rm --env-file path/to/runtime.env resend-service migrate
-docker run --rm -p 3000:3000 --env-file path/to/runtime.env resend-service
+docker run --rm -p 8080:8080 --env-file path/to/runtime.env resend-service
 ```
 
 The multi-stage image runs as a non-root user on Oracle Linux. The native image

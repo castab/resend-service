@@ -4,7 +4,7 @@ import com.sksamuel.hoplite.ConfigLoaderBuilder
 import com.sksamuel.hoplite.addResourceSource
 
 data class Config(
-    val port: Int = 3000,
+    val port: Int = 8080,
     val host: String = "0.0.0.0",
     val databaseUrl: String? = null,
     val resendApiKey: String? = null,

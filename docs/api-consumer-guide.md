@@ -195,7 +195,7 @@ Authenticated request example:
 ```bash
 curl -i \
   -H "Authorization: Bearer $CONVERSATION_API_KEY" \
-  "http://localhost:3000/api/conversations/v1?assignment=unassigned"
+  "http://localhost:8080/api/conversations/v1?assignment=unassigned"
 ```
 
 ## Compatibility and known gaps
