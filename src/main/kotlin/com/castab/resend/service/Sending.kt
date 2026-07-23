@@ -16,6 +16,7 @@ import com.castab.resend.email.ResendApiError
 import com.castab.resend.email.ResendTransportError
 import com.castab.resend.email.SendEmailInput
 import com.castab.resend.email.isRetryableResendApiError
+import com.castab.resend.email.loggableError
 import com.castab.resend.email.reduceDeliveryEvents
 import org.jdbi.v3.core.Handle
 import org.slf4j.LoggerFactory
@@ -116,7 +117,7 @@ private fun Services.hydrateSentMetadata(message: EmailMessage): EmailMessage {
             lastError = error
         }
     }
-    log.warn("Sent email metadata is not available yet: {}", lastError?.message ?: "Unknown error")
+    log.warn("Sent email metadata is not available yet: {}", loggableError(lastError))
     return message
 }
 

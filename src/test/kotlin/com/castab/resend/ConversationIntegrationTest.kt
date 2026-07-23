@@ -8,6 +8,7 @@ import com.castab.resend.support.TestFactory.conversationRequest
 import com.castab.resend.support.TestFactory.drainRequest
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -15,6 +16,8 @@ import org.http4k.core.HttpHandler
 import org.http4k.core.Method
 import org.http4k.core.Request
 import org.http4k.core.Status
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 
 private const val CREATE_BODY =
     """{"topic":{"type":"order","externalId":"o-1","title":"Order 1"},"participant":{"email":"buyer@example.com","name":"Buyer"},"message":{"text":"Hello"}}"""
@@ -164,6 +167,23 @@ class ConversationIntegrationTest : StringSpec({
         val response = app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-oversize-1"))
         response.status shouldBe Status.BAD_GATEWAY
         bodyJson(response)["message"]!!.jsonObject["state"]!!.jsonPrimitive.content shouldBe "indeterminate"
+    }
+
+    "outbound retrieval failures do not log provider response contents" {
+        val marker = "MARKER-7c2e-SHOULD-NOT-BE-LOGGED"
+        // Malformed JSON makes decoding fail with an error that quotes the response excerpt.
+        fake.malformedSentRetrievalBody = """{"id":"sent-1","subject":"$marker","text":"$marker",MALFORMED"""
+        val originalErr = System.err
+        val captured = ByteArrayOutputStream()
+        val response = try {
+            System.setErr(PrintStream(captured, true))
+            app(conversationRequest(Method.POST, "/api/conversations/v1", CREATE_BODY, "idem-log-1"))
+        } finally {
+            System.setErr(originalErr)
+        }
+        // Hydration failure only warns; the send itself succeeded.
+        response.status shouldBe Status.CREATED
+        captured.toString(Charsets.UTF_8.name()) shouldNotContain marker
     }
 
     "topic lookup and assignment conflict behave correctly" {

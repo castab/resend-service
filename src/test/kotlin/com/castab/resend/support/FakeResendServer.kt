@@ -50,6 +50,9 @@ class FakeResendServer {
     /** When true, the next successful send response is padded past the client's API response bound. */
     var oversizeNextSendResponse: Boolean = false
 
+    /** While set, every `GET /emails/{id}` retrieval returns this raw body (e.g. malformed JSON). */
+    var malformedSentRetrievalBody: String? = null
+
     private lateinit var server: Http4kServer
     val baseUrl: String get() = "http://localhost:${server.port()}"
 
@@ -75,6 +78,7 @@ class FakeResendServer {
         malformedNextBatchResponse = false
         failSentRetrievals = false
         oversizeNextSendResponse = false
+        malformedSentRetrievalBody = null
         received.clear()
         received["em_received123"] = buildJsonObject {
             put("id", JsonPrimitive("em_received123"))
@@ -186,6 +190,9 @@ class FakeResendServer {
         "/emails/{id}" bind Method.GET to { request ->
             if (failSentRetrievals) {
                 return@to json(500, buildJsonObject { put("error", JsonPrimitive("simulated_retrieval_failure")) })
+            }
+            malformedSentRetrievalBody?.let { body ->
+                return@to Response(Status.OK).header("content-type", "application/json").body(body)
             }
             val id = request.path("id").orEmpty()
             val sent = sends.firstOrNull { it.id == id }

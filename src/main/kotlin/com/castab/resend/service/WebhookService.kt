@@ -23,6 +23,7 @@ import com.castab.resend.email.isContactEvent
 import com.castab.resend.email.isDomainEvent
 import com.castab.resend.email.isEmailEvent
 import com.castab.resend.email.isValidReplyToBaseAddress
+import com.castab.resend.email.loggableError
 import com.castab.resend.email.parseAddress
 import com.castab.resend.http.RawBodyErr
 import com.castab.resend.http.RawBodyOk
@@ -78,8 +79,8 @@ fun Services.handleWebhook(request: Request): Response {
         jsonResponse(Status.OK, buildJsonObject { put("received", JsonPrimitive(true)) })
     } catch (ex: Throwable) {
         // Exception messages can carry payload excerpts (addresses, subjects, bodies), which the
-        // repository logging rules forbid; log only the stable exception class.
-        log.error("Failed to process webhook event: {}", ex::class.simpleName ?: "UnknownError")
+        // repository logging rules forbid; log only the stable failure description.
+        log.error("Failed to process webhook event: {}", loggableError(ex))
         error(Status.INTERNAL_SERVER_ERROR, "Failed to process webhook")
     }
 }
@@ -122,10 +123,7 @@ private fun Services.insertEmailEvent(envelope: WebhookEnvelope, svixId: String)
                 existingReceived.inReplyToInternetMessageId ?: existingReceived.referenceInternetMessageIds.lastOrNull(),
             )
         } catch (ex: Throwable) {
-            log.warn(
-                "Outbound hydration for an already-projected inbound email failed: {}",
-                ex::class.simpleName ?: "UnknownError",
-            )
+            log.warn("Outbound hydration for an already-projected inbound email failed: {}", loggableError(ex))
         }
         return
     }

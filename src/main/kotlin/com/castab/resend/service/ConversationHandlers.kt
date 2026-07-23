@@ -31,6 +31,7 @@ import com.castab.resend.email.buildReferences
 import com.castab.resend.email.createReplySubject
 import com.castab.resend.email.createRoutingToken
 import com.castab.resend.email.isValidReplyToBaseAddress
+import com.castab.resend.email.loggableError
 import com.castab.resend.email.normalizeSubject
 import com.castab.resend.email.parseAddress
 import com.castab.resend.http.error
@@ -219,7 +220,7 @@ private fun Services.deliverOpeningMessage(conversationId: String, messageId: St
         put("message", serializeMessage(message))
     })
 } catch (error: Throwable) {
-    log.error("Failed to send opening conversation email: {}", error.message ?: "Unknown error")
+    log.error("Failed to send opening conversation email: {}", loggableError(error))
     val message = jdbi.h { it.findMessageById(messageId)!! }
     jsonResponse(Status.BAD_GATEWAY, buildJsonObject {
         put("error", JsonPrimitive("Failed to send email"))
@@ -359,7 +360,7 @@ private fun Services.reply(
     val parentInternetMessageId = try {
         ensureInternetMessageId(parent.id)
     } catch (ex: Throwable) {
-        log.error("Failed to retrieve reply parent metadata: {}", ex.message ?: "Unknown error")
+        log.error("Failed to retrieve reply parent metadata: {}", loggableError(ex))
         return error(Status.SERVICE_UNAVAILABLE, "Reply parent threading metadata is unavailable")
     } ?: return error(Status.CONFLICT, "Reply parent threading metadata is unavailable")
 
@@ -417,7 +418,7 @@ private fun Services.reply(
             put("message", serializeMessage(message))
         })
     } catch (error: Throwable) {
-        log.error("Failed to send conversation reply: {}", error.message ?: "Unknown error")
+        log.error("Failed to send conversation reply: {}", loggableError(error))
         val message = jdbi.h { it.findMessageById(pending.id)!! }
         jsonResponse(Status.BAD_GATEWAY, buildJsonObject {
             put("error", JsonPrimitive("Failed to send email"))

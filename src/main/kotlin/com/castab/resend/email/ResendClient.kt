@@ -78,6 +78,17 @@ fun isRetryableResendApiError(error: ResendApiError): Boolean =
         error.status >= 500 ||
         (error.status == 409 && error.code == "concurrent_idempotent_requests")
 
+/**
+ * Stable, value-free failure description for logs. Exception messages can quote provider payloads
+ * (subjects, addresses, headers, bodies), which the repository logging rules forbid; this keeps
+ * only the exception class plus the provider status/code, which carry no email content.
+ */
+fun loggableError(error: Throwable?): String = when (error) {
+    null -> "UnknownError"
+    is ResendApiError -> "ResendApiError(status=${error.status}, code=${error.code ?: "none"})"
+    else -> error::class.simpleName ?: "UnknownError"
+}
+
 /** Resend returned a response larger than the applicable read bound. */
 class ResendResponseTooLargeError(message: String) : RuntimeException(message)
 
