@@ -13,4 +13,4 @@ COPY --from=builder --chown=app:app /workspace/build/native/nativeCompile/resend
 USER app
 ENV PORT=3000 HOST=0.0.0.0
 EXPOSE 3000
-ENTRYPOINT ["/app/resend-service", "-Xms16m", "-Xmx128m"]
+ENTRYPOINT ["/app/resend-service"]

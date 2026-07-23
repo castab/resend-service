@@ -138,7 +138,9 @@ docker run --rm -p 3000:3000 --env-file path/to/runtime.env resend-service
 ```
 
 The multi-stage image runs as a non-root user on Oracle Linux. The native image
-uses Serial GC with a 16 MiB initial heap and a 128 MiB maximum. The release
+uses Serial GC with a 16 MiB initial heap and a 128 MiB maximum via embedded
+native-image runtime settings, so the container entrypoint remains
+`/app/resend-service` for both normal startup and `migrate`. The release
 workflow currently publishes `linux/amd64` images only.
 
 For local PostgreSQL, run `docker compose up -d postgresql`. The application is
@@ -157,8 +159,10 @@ accepting connections before starting the application profile.
 
 `railway.json` builds the Dockerfile, runs `/app/resend-service migrate` as a
 pre-deploy command, checks `/api/health/v1` for up to 120 seconds, and restarts
-failed deployments up to three times. Configure every health-required variable
-before deployment. The health check still does not make the unfinished email
+failed deployments up to three times. The image entrypoint is the bare
+`/app/resend-service` binary so Railway can pass `migrate` as the single CLI
+argument during predeploy. Configure every health-required variable before
+deployment. The health check still does not make the unfinished email
 operations production-ready.
 
 ## API documentation
