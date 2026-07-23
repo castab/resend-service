@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.zip.ZipFile
 
 plugins {
     kotlin("jvm") version "2.3.21"
@@ -41,6 +42,53 @@ java {
 }
 application { mainClass = "com.castab.resend.MainKt" }
 tasks.test { useJUnitPlatform() }
+
+val generateFlywayNativeMetadata = tasks.register("generateFlywayNativeMetadata") {
+    val outputDir = layout.buildDirectory.dir("generated/flyway-native-metadata")
+    outputs.dir(outputDir)
+    inputs.property("flywayCoreVersion", "12.10.0")
+    notCompatibleWithConfigurationCache("Generates Flyway native metadata from the resolved flyway-core jar.")
+
+    doLast {
+        val flywayCore = configurations.runtimeClasspath.get().resolve().single {
+            it.name.startsWith("flyway-core-") && it.extension == "jar"
+        }
+        val classes = ZipFile(flywayCore).use { zip ->
+            zip.entries().asSequence()
+                .map { it.name }
+                .filter { it.startsWith("org/flywaydb/") && it.endsWith(".class") }
+                .filterNot { it.endsWith("package-info.class") || it.endsWith("module-info.class") }
+                .map { it.removeSuffix(".class").replace('/', '.') }
+                .sorted()
+                .toList()
+        }
+
+        val nativeImageDir = outputDir.get().asFile.resolve("META-INF/native-image/org.flywaydb/flyway-core")
+        nativeImageDir.mkdirs()
+
+        nativeImageDir.resolve("reflect-config.json").writeText(
+            classes.joinToString(prefix = "[\n", postfix = "\n]\n", separator = ",\n") { name ->
+                "  {\n" +
+                    "    \"name\": \"$name\",\n" +
+                    "    \"allDeclaredConstructors\": true,\n" +
+                    "    \"allDeclaredMethods\": true,\n" +
+                    "    \"allDeclaredFields\": true\n" +
+                    "  }"
+            },
+        )
+
+        nativeImageDir.resolve("serialization-config.json").writeText(
+            classes.joinToString(prefix = "[\n", postfix = "\n]\n", separator = ",\n") { name ->
+                "  { \"name\": \"$name\" }"
+            },
+        )
+    }
+}
+
+tasks.processResources {
+    dependsOn(generateFlywayNativeMetadata)
+    from(generateFlywayNativeMetadata)
+}
 
 graalvmNative {
     binaries.named("main") {
