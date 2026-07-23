@@ -39,19 +39,36 @@ release PR.
    ```
 
 4. Open a pull request into `main` with the version and changelog updates.
-5. After the PR is merged and `main` CI passes, create and push an annotated
-   tag for the merged commit:
+5. Create and push an annotated tag for the target commit. For prerelease
+   validation, use an RC tag such as `v0.3.0-rc.1`; for a stable release, use
+   the final SemVer tag from a commit already merged into `main`.
+
+   For an RC tag from the current branch:
 
    ```bash
-   git checkout main
-   git pull --ff-only
-   VERSION=v0.3.0
+   VERSION=v0.3.0-rc.1
+   git tag -a "$VERSION" -m "Release $VERSION"
+   git push origin "$VERSION"
+   ```
+
+   For a stable tag from `main`:
+
+   ```bash
+    git checkout main
+    git pull --ff-only
+    VERSION=v0.3.0
    git tag -a "$VERSION" -m "Release $VERSION"
    git push origin "$VERSION"
    ```
 
 6. The tag-triggered publish workflow builds and pushes `linux/amd64` Docker
-   tags to Docker Hub for stable releases:
+   tags to Docker Hub.
+
+   For RC and other prerelease tags, it publishes only the exact version tag:
+
+   - `castab/resend-service:x.y.z-rc.n`
+
+   For stable releases, it also updates the moving aliases:
 
    - `castab/resend-service:x.y.z`
    - `castab/resend-service:x.y`
@@ -75,7 +92,9 @@ and verify the `migrate` command against a disposable PostgreSQL 18+ database.
 The normal test workflow runs on branch pushes and pull requests, not tag
 pushes, so the tagged commit must already have passed `main` CI.
 
-The workflow trigger accepts the broad `v*.*.*` pattern and does not enforce
-annotated tags, stable SemVer, or metadata alignment. Maintainers must verify
-those release-policy requirements before pushing a tag; an invalid tag could
-otherwise update moving Docker aliases including `latest`.
+The workflow trigger accepts both stable `v*.*.*` tags and prerelease
+`v*.*.*-*` tags and does not enforce annotated tags, SemVer validity, or
+metadata alignment. Maintainers must verify those release-policy requirements
+before pushing a tag. Stable tags must point to commits already on `main` and
+update the moving Docker aliases; prerelease tags publish only the exact
+version tag.

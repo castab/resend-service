@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,6 +27,7 @@ jobs:
           fetch-depth: 0
 
       - name: Verify tagged commit is on main
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           git fetch origin main --depth=1
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
@@ -43,9 +45,9 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
             org.opencontainers.image.title=resend-service
             org.opencontainers.image.description=Kotlin/http4k port of the Resend conversation service; see release notes for capability status.
