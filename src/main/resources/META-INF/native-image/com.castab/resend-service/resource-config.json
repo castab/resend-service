@@ -3,6 +3,7 @@
     "includes": [
       { "pattern": "application\\.conf" },
       { "pattern": "public/.*" },
+      { "pattern": "db/migration" },
       { "pattern": "db/migration/.*\\.sql" }
     ]
   }
