@@ -44,6 +44,37 @@ The conversation, webhook, threading, idempotency, and outbox rules in
 Open this repository as a Gradle project in IntelliJ IDEA and select JDK 25.
 No generated sources are required.
 
+## Design notes
+
+### Svix webhook verification is implemented in-tree
+
+Resend signs webhooks with the Svix scheme, and this service verifies them in
+about forty lines over JDK crypto primitives
+(`src/main/kotlin/com/castab/resend/email/WebhookVerify.kt`) rather than by
+depending on the official `com.svix.kotlin:svix-kotlin` library. This is a
+deliberate trade-off:
+
+- The library is the full Svix management-API client and brings
+  `kotlin-reflect`, `kotlinx-coroutines`, `kotlinx-datetime`, OkHttp, and its
+  own `kotlinx-serialization` pin. This service only consumes webhooks —
+  Resend owns the Svix application — so none of that client surface would be
+  used.
+- `kotlin-reflect` and coroutines are the two most common sources of GraalVM
+  Native Image friction, and the native executable is a primary build
+  artifact of this project.
+- The verification contract is small, stable, and published:
+  `base64(HMAC_SHA256(secret, "id.timestamp.body"))` compared constant-time
+  against each `v1,` entry in the signature header, with a five-minute
+  timestamp tolerance. The test suite keeps an independent signer
+  (`src/test/kotlin/com/castab/resend/support/Svix.kt`) that must agree with
+  the verifier in every webhook integration test.
+
+Revisit this decision if Resend ever migrates to Svix's asymmetric `v1a`
+signatures (the in-tree verifier deliberately ignores non-`v1` entries) or if
+this service starts calling the Svix API. All verification routes through the
+single `WebhookVerifier.verify` seam, so swapping the library in later is a
+one-file change.
+
 ## Development
 
 Run the unit tests and JVM application:
