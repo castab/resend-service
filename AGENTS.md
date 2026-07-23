@@ -59,6 +59,12 @@
 - Treat checked-in Flyway migrations under
   `src/main/resources/db/migration` as authoritative.
 - Add migrations; never edit deployed migration history.
+- Keep `src/main/resources/db/migration/index.txt` aligned with every new SQL
+  migration. GraalVM native images cannot rely on Flyway's normal classpath
+  scanning, so native `migrate` copies the indexed SQL files to a temporary
+  filesystem location before running Flyway. See
+  `https://github.com/flyway/flyway/issues/2927#issuecomment-3270422005` and the
+  surrounding issue thread for the upstream Flyway/GraalVM context.
 - Preserve UUIDv7 primary keys and all webhook, message, and outbox idempotency
   constraints.
 - Run the relevant Gradle tests after schema changes.

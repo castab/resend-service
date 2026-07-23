@@ -130,6 +130,17 @@ The GraalVM Gradle plugin is currently incompatible with this project's enabled
 configuration cache, so native builds must include
 `--no-configuration-cache`. The Dockerfile already does this.
 
+Flyway is the main native-image outlier in this service. On the JVM, Flyway
+uses the normal `classpath:db/migration` scan. In GraalVM native images, the
+same classpath scan does not reliably work against Graal's bundled `resource:`
+protocol, so `migrate` copies the checked-in SQL files from
+`src/main/resources/db/migration` to a temporary directory and points Flyway at
+that `filesystem:` location instead. Keep `src/main/resources/db/migration/index.txt`
+aligned with every new checked-in SQL migration, and keep the build-generated
+Flyway native metadata in mind when upgrading Flyway. Upstream context:
+`https://github.com/flyway/flyway/issues/2927#issuecomment-3270422005` and the
+surrounding thread.
+
 Run migrations and then start the container with a runtime environment file:
 
 ```bash
@@ -162,7 +173,9 @@ pre-deploy command, checks `/api/health/v1` for up to 120 seconds, and restarts
 failed deployments up to three times. The image entrypoint is the bare
 `/app/resend-service` binary so Railway can pass `migrate` as the single CLI
 argument during predeploy. Configure every health-required variable before
-deployment. The health check still does not make the unfinished email
+deployment. If a new migration was added, verify that
+`src/main/resources/db/migration/index.txt` includes it before cutting a new
+native image or Railway deploy. The health check still does not make the unfinished email
 operations production-ready.
 
 ## API documentation
