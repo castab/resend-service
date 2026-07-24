@@ -58,6 +58,9 @@
 - Never infer thread membership from subject alone when RFC ancestry exists.
 - Keep Resend calls bounded with an abort timeout.
 - Do not log message bodies, addresses, subjects, headers, or credentials.
+- Keep the per-conversation Reply-To routing token and Message-ID hydration as
+  designed; see [docs/adr-0001-reply-to-routing-tokens.md](docs/adr-0001-reply-to-routing-tokens.md)
+  for why (Resend/SES overwrites caller-supplied Message-IDs).
 
 ## Contracts And Tests
 
